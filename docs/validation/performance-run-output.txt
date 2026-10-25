@@ -1,0 +1,110 @@
+
+##### node C:/Users/sahukari.rao/Downloads/prepearation/schwab-digital-messaging-platform/performance/node-load/load-driver.mjs --base-url http://localhost:18280 --scenario health --concurrency 8 --duration 10 --out C:/Users/sahukari.rao/Downloads/prepearation/schwab-digital-messaging-platform/performance/node-load/results/health.json
+load-driver: scenario=health concurrency=8 duration=10s rate=unlimited target=http://localhost:18280
+
+operation                          count    rps     p50ms   p95ms   p99ms   maxms
+GET /actuator/health/readiness      8661   861.8      5.6    28.0    66.8   278.4
+
+overall: 8661 requests in 10.1s = 861.8 rps; p50=5.6ms p95=28.0ms p99=66.8ms
+status counts: {"200":8661}
+wrote C:/Users/sahukari.rao/Downloads/prepearation/schwab-digital-messaging-platform/performance/node-load/results/health.json
+
+##### node C:/Users/sahukari.rao/Downloads/prepearation/schwab-digital-messaging-platform/performance/node-load/load-driver.mjs --base-url http://localhost:18280 --scenario submit --concurrency 8 --duration 30 --warmup 5 --out C:/Users/sahukari.rao/Downloads/prepearation/schwab-digital-messaging-platform/performance/node-load/results/submit-c8.json
+load-driver: scenario=submit concurrency=8 duration=30s rate=unlimited target=http://localhost:18280
+warm-up 5s done
+
+operation                          count    rps     p50ms   p95ms   p99ms   maxms
+POST /messages                      5375   178.9     24.5   134.8   200.4   548.3
+
+overall: 5375 requests in 30.1s = 178.9 rps; p50=24.5ms p95=134.8ms p99=200.4ms
+status counts: {"202":5375}
+wrote C:/Users/sahukari.rao/Downloads/prepearation/schwab-digital-messaging-platform/performance/node-load/results/submit-c8.json
+after run : {"ACCEPTED":0,"VALIDATED":4135,"QUEUED":2,"PROCESSING":1,"SENT_TO_PROVIDER":938,"DELIVERED":0,"REJECTED":781,"RETRY_PENDING":0,"FAILED":0,"DEAD_LETTERED":0,"CANCELLED":0,"DELIVERY_UNKNOWN":0} queues={"inFlight":1,"retryPending":0,"dlq":0}
+
+##### node C:/Users/sahukari.rao/Downloads/prepearation/schwab-digital-messaging-platform/performance/node-load/wait-drain.mjs --base-url http://localhost:18280 --timeout 300
+backlog at start: 3952 ({"ACCEPTED":0,"VALIDATED":3945,"QUEUED":6,"PROCESSING":1,"SENT_TO_PROVIDER":1124,"DELIVERED":0,"REJECTED":781,"RETRY_PENDING":0,"FAILED":0,"DEAD_LETTERED":0,"CANCELLED":0,"DELIVERY_UNKNOWN":0})
+  t+5s pending=3441 (97/s)
+  t+11s pending=2891 (104/s)
+  t+16s pending=2251 (122/s)
+  t+21s pending=1536 (138/s)
+  t+26s pending=825 (135/s)
+  t+31s pending=147 (129/s)
+  t+37s pending=147 (0/s)
+  t+42s pending=147 (0/s)
+drained: to a plateau of 147 still-pending messages (deferred by quiet hours, not stuck) in 31.5 s; 3805 messages = 121 msg/s end-to-end (excludes messages processed before the first poll)
+final: {"ACCEPTED":0,"VALIDATED":147,"QUEUED":0,"PROCESSING":0,"SENT_TO_PROVIDER":4929,"DELIVERED":0,"REJECTED":781,"RETRY_PENDING":0,"FAILED":0,"DEAD_LETTERED":0,"CANCELLED":0,"DELIVERY_UNKNOWN":0}
+
+##### node C:/Users/sahukari.rao/Downloads/prepearation/schwab-digital-messaging-platform/performance/node-load/load-driver.mjs --base-url http://localhost:18280 --scenario submit --concurrency 32 --duration 30 --warmup 5 --out C:/Users/sahukari.rao/Downloads/prepearation/schwab-digital-messaging-platform/performance/node-load/results/submit-c32.json
+load-driver: scenario=submit concurrency=32 duration=30s rate=unlimited target=http://localhost:18280
+warm-up 5s done
+
+operation                          count    rps     p50ms   p95ms   p99ms   maxms
+POST /messages                      8928   297.2     77.7   309.6   487.4  1667.6
+
+overall: 8928 requests in 30.0s = 297.2 rps; p50=77.7ms p95=309.6ms p99=487.4ms
+status counts: {"202":7859,"503":1069}
+wrote C:/Users/sahukari.rao/Downloads/prepearation/schwab-digital-messaging-platform/performance/node-load/results/submit-c32.json
+after run : {"ACCEPTED":0,"VALIDATED":5354,"QUEUED":18,"PROCESSING":2,"SENT_TO_PROVIDER":7731,"DELIVERED":0,"REJECTED":2017,"RETRY_PENDING":0,"FAILED":0,"DEAD_LETTERED":0,"CANCELLED":0,"DELIVERY_UNKNOWN":0} queues={"inFlight":2,"retryPending":0,"dlq":0}
+
+##### node C:/Users/sahukari.rao/Downloads/prepearation/schwab-digital-messaging-platform/performance/node-load/wait-drain.mjs --base-url http://localhost:18280 --timeout 600
+backlog at start: 4847 ({"ACCEPTED":0,"VALIDATED":4846,"QUEUED":1,"PROCESSING":0,"SENT_TO_PROVIDER":8258,"DELIVERED":0,"REJECTED":2017,"RETRY_PENDING":0,"FAILED":0,"DEAD_LETTERED":0,"CANCELLED":0,"DELIVERY_UNKNOWN":0})
+  t+5s pending=3759 (206/s)
+  t+11s pending=2754 (187/s)
+  t+16s pending=1663 (206/s)
+  t+21s pending=513 (218/s)
+  t+26s pending=377 (26/s)
+  t+32s pending=377 (0/s)
+  t+37s pending=377 (0/s)
+drained: to a plateau of 377 still-pending messages (deferred by quiet hours, not stuck) in 22.2 s; 4470 messages = 201 msg/s end-to-end (excludes messages processed before the first poll)
+final: {"ACCEPTED":0,"VALIDATED":377,"QUEUED":0,"PROCESSING":0,"SENT_TO_PROVIDER":12728,"DELIVERED":0,"REJECTED":2017,"RETRY_PENDING":0,"FAILED":0,"DEAD_LETTERED":0,"CANCELLED":0,"DELIVERY_UNKNOWN":0}
+
+##### node C:/Users/sahukari.rao/Downloads/prepearation/schwab-digital-messaging-platform/performance/node-load/load-driver.mjs --base-url http://localhost:18280 --scenario read --concurrency 16 --duration 20 --warmup 3 --out C:/Users/sahukari.rao/Downloads/prepearation/schwab-digital-messaging-platform/performance/node-load/results/read-c16.json
+load-driver: scenario=read concurrency=16 duration=20s rate=unlimited target=http://localhost:18280
+warm-up 3s done
+
+operation                          count    rps     p50ms   p95ms   p99ms   maxms
+GET /messages                       1988    99.2     11.4   119.0   174.6   343.6
+GET /ops/summary                    2468   123.2     81.5   219.8   312.3   508.0
+GET /ops/queues                      792    39.5      8.7   112.2   181.0   259.5
+
+overall: 5248 requests in 20.0s = 262 rps; p50=37.3ms p95=184.1ms p99=266.4ms
+status counts: {"200":5248}
+wrote C:/Users/sahukari.rao/Downloads/prepearation/schwab-digital-messaging-platform/performance/node-load/results/read-c16.json
+after run : {"ACCEPTED":0,"VALIDATED":377,"QUEUED":0,"PROCESSING":0,"SENT_TO_PROVIDER":12728,"DELIVERED":0,"REJECTED":2017,"RETRY_PENDING":0,"FAILED":0,"DEAD_LETTERED":0,"CANCELLED":0,"DELIVERY_UNKNOWN":0} queues={"inFlight":0,"retryPending":0,"dlq":0}
+
+##### node C:/Users/sahukari.rao/Downloads/prepearation/schwab-digital-messaging-platform/performance/node-load/load-driver.mjs --base-url http://localhost:18280 --scenario idempotent --requests 400 --concurrency 8 --warmup 0 --out C:/Users/sahukari.rao/Downloads/prepearation/schwab-digital-messaging-platform/performance/node-load/results/idempotent.json
+load-driver: scenario=idempotent concurrency=8 requests=400 rate=unlimited target=http://localhost:18280
+
+operation                          count    rps     p50ms   p95ms   p99ms   maxms
+POST /messages (same key)            400     478     13.7    28.7    87.3    99.7
+
+overall: 400 requests in 0.8s = 478 rps; p50=13.7ms p95=28.7ms p99=87.3ms
+status counts: {"200":140,"202":1,"429":259}
+wrote C:/Users/sahukari.rao/Downloads/prepearation/schwab-digital-messaging-platform/performance/node-load/results/idempotent.json
+after run : {"ACCEPTED":0,"VALIDATED":377,"QUEUED":0,"PROCESSING":0,"SENT_TO_PROVIDER":12729,"DELIVERED":0,"REJECTED":2017,"RETRY_PENDING":0,"FAILED":0,"DEAD_LETTERED":0,"CANCELLED":0,"DELIVERY_UNKNOWN":0} queues={"inFlight":0,"retryPending":0,"dlq":0}
+
+##### node C:/Users/sahukari.rao/Downloads/prepearation/schwab-digital-messaging-platform/performance/node-load/load-driver.mjs --base-url http://localhost:18280 --scenario submit --concurrency 8 --duration 20 --warmup 2 --fault TRANSIENT --fault-probability 1 --settle 60 --out C:/Users/sahukari.rao/Downloads/prepearation/schwab-digital-messaging-platform/performance/node-load/results/retry-storm-transient.json
+load-driver: scenario=submit concurrency=8 duration=20s rate=unlimited target=http://localhost:18280
+fault mode TRANSIENT (p=1) on simulated-email: HTTP 200
+warm-up 2s done
+fault mode reset to NONE
+settling 60s ...
+
+operation                          count    rps     p50ms   p95ms   p99ms   maxms
+POST /messages                      8187   408.5     11.8    59.9   140.6   273.4
+PUT fault-mode                         1       0      5.3     5.3     5.3     5.3
+
+overall: 8188 requests in 20.0s = 408.6 rps; p50=11.8ms p95=59.9ms p99=140.6ms
+status counts: {"200":1,"202":7731,"503":456}
+wrote C:/Users/sahukari.rao/Downloads/prepearation/schwab-digital-messaging-platform/performance/node-load/results/retry-storm-transient.json
+after run : {"ACCEPTED":0,"VALIDATED":5564,"QUEUED":807,"PROCESSING":0,"SENT_TO_PROVIDER":14047,"DELIVERED":0,"REJECTED":3146,"RETRY_PENDING":0,"FAILED":0,"DEAD_LETTERED":0,"CANCELLED":0,"DELIVERY_UNKNOWN":0} queues={"inFlight":1,"retryPending":0,"dlq":0}
+after settle: {"ACCEPTED":0,"VALIDATED":584,"QUEUED":0,"PROCESSING":0,"SENT_TO_PROVIDER":19834,"DELIVERED":0,"REJECTED":3146,"RETRY_PENDING":0,"FAILED":0,"DEAD_LETTERED":0,"CANCELLED":0,"DELIVERY_UNKNOWN":0} queues={"inFlight":0,"retryPending":0,"dlq":0}
+
+##### node C:/Users/sahukari.rao/Downloads/prepearation/schwab-digital-messaging-platform/performance/node-load/wait-drain.mjs --base-url http://localhost:18280 --timeout 300
+backlog at start: 584 ({"ACCEPTED":0,"VALIDATED":584,"QUEUED":0,"PROCESSING":0,"SENT_TO_PROVIDER":19834,"DELIVERED":0,"REJECTED":3146,"RETRY_PENDING":0,"FAILED":0,"DEAD_LETTERED":0,"CANCELLED":0,"DELIVERY_UNKNOWN":0})
+  t+5s pending=584 (0/s)
+  t+10s pending=584 (0/s)
+drained: to a plateau of 584 still-pending messages (deferred by quiet hours, not stuck) in 15.6 s; 0 messages = 0 msg/s end-to-end (excludes messages processed before the first poll)
+final: {"ACCEPTED":0,"VALIDATED":584,"QUEUED":0,"PROCESSING":0,"SENT_TO_PROVIDER":19834,"DELIVERED":0,"REJECTED":3146,"RETRY_PENDING":0,"FAILED":0,"DEAD_LETTERED":0,"CANCELLED":0,"DELIVERY_UNKNOWN":0}
+
+##### done

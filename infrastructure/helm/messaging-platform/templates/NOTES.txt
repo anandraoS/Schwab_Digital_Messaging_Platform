@@ -1,0 +1,14 @@
+messaging-platform {{ .Chart.AppVersion }} installed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+Port-forward and probe:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "mp.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+  curl -fsS http://127.0.0.1:{{ .Values.service.port }}/actuator/health/readiness
+
+{{- if .Values.secrets.create }}
+
+WARNING: the chart created a DUMMY secret from values.yaml placeholders. Use secrets.existingSecret for real environments.
+{{- end }}
+
+This chart deploys the backend only. PostgreSQL, RabbitMQ, Redis and MongoDB must already exist
+(see infrastructure/kubernetes/overlays/dev/dependencies.yaml for dev-only examples).
+NOT executed by the authors: helm was unavailable when this chart was written.

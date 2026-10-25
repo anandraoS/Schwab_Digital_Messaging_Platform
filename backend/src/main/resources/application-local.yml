@@ -1,0 +1,41 @@
+# Local development: in-memory H2 (PostgreSQL mode), in-memory bus/coordination/Mongo, dev token issuer, synthetic seed.
+# The H2 credentials below are the conventional in-memory defaults for a throw-away database, not secrets.
+server:
+  port: ${SERVER_PORT:18080}
+
+spring:
+  datasource:
+    url: jdbc:h2:mem:messaging;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ""
+  flyway:
+    locations: classpath:db/migration,classpath:db/seed
+
+management:
+  health:
+    redis:
+      enabled: false
+    rabbit:
+      enabled: false
+    mongo:
+      enabled: false
+
+logging:
+  pattern:
+    level: "%5p [cid=%X{correlationId:-} tenant=%X{tenant:-} msg=%X{messageId:-}]"
+
+messaging:
+  bus:
+    type: memory
+  coordination:
+    type: memory
+  security:
+    dev-token-enabled: true
+    docs-public: true
+    metrics-public: true
+  callback:
+    secrets:
+      simulated-email-key: local-dev-secret-not-for-production
+      simulated-sms-key: local-dev-secret-not-for-production
+      simulated-push-key: local-dev-secret-not-for-production
+      acme-sms-key: local-dev-secret-not-for-production

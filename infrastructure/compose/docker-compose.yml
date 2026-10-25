@@ -1,0 +1,246 @@
+# NOT executed on the authoring machine (no Docker): validated statically only.
+# Usage (from repo root):  docker compose --env-file .env -f infrastructure/compose/docker-compose.yml up -d --build
+# All credentials come from .env (dummy placeholders in .env.example).
+name: messaging-platform
+
+x-logging: &default-logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
+services:
+  postgres:
+    image: postgres:16.4-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: messaging
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      MESSAGING_APP_DB_PASSWORD: ${MESSAGING_APP_DB_PASSWORD:?set in .env}
+      MESSAGING_MIGRATOR_DB_PASSWORD: ${MESSAGING_MIGRATOR_DB_PASSWORD:?set in .env}
+      MESSAGING_READONLY_DB_PASSWORD: ${MESSAGING_READONLY_DB_PASSWORD:?set in .env}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ../postgres/init.sh:/docker-entrypoint-initdb.d/10-init.sh:ro
+      - ../postgres/init.sql:/opt/init/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d messaging"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [data]
+    ports:
+      - "127.0.0.1:5432:5432"
+    deploy: { resources: { limits: { cpus: "1.0", memory: 1g } } }
+    logging: *default-logging
+
+  rabbitmq:
+    image: rabbitmq:3.13.7-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:?set in .env}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?set in .env}
+    volumes:
+      - rabbit-data:/var/lib/rabbitmq
+      - ../rabbitmq/rabbitmq.conf:/etc/rabbitmq/conf.d/90-messaging.conf:ro
+      - ../rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    ports:
+      - "127.0.0.1:15672:15672"   # management UI, loopback only
+    networks: [data]
+    deploy: { resources: { limits: { cpus: "1.0", memory: 1g } } }
+    logging: *default-logging
+
+  redis:
+    image: redis:7.4.1-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?set in .env}", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    networks: [data]
+    deploy: { resources: { limits: { cpus: "0.5", memory: 256m } } }
+    logging: *default-logging
+
+  mongo:
+    image: mongo:7.0.14
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:?set in .env}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?set in .env}
+      MONGO_INITDB_DATABASE: messaging_diagnostics
+      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD:?set in .env}
+    volumes:
+      - mongo-data:/data/db
+      - ../mongo/init-mongo.js:/docker-entrypoint-initdb.d/10-init-mongo.js:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    networks: [data]
+    deploy: { resources: { limits: { cpus: "1.0", memory: 768m } } }
+    logging: *default-logging
+
+  backend:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.backend
+      args:
+        VERSION: ${IMAGE_TAG:-local}
+    image: messaging-backend:${IMAGE_TAG:-local}
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      mongo: { condition: service_healthy }
+    environment:
+      SPRING_PROFILES_ACTIVE: prod-like,rabbit
+      SERVER_PORT: "18080"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/messaging
+      SPRING_DATASOURCE_USERNAME: messaging_app
+      SPRING_DATASOURCE_PASSWORD: ${MESSAGING_APP_DB_PASSWORD}
+      SPRING_FLYWAY_USER: messaging_migrator
+      SPRING_FLYWAY_PASSWORD: ${MESSAGING_MIGRATOR_DB_PASSWORD}
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: "5672"
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS}
+      SPRING_RABBITMQ_VIRTUAL_HOST: messaging
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD}
+      SPRING_DATA_MONGODB_URI: mongodb://messaging_app:${MONGO_APP_PASSWORD}@mongo:27017/messaging_diagnostics?authSource=messaging_diagnostics
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: ${JWT_ISSUER_URI}
+      MESSAGING_BUS_TYPE: rabbit
+      MESSAGING_COORDINATION_TYPE: redis
+      MESSAGING_CALLBACK_SECRETS_LOCAL_KEY: ${MESSAGING_CALLBACK_SECRETS_LOCAL_KEY}
+      MESSAGING_SECURITY_DEV_TOKEN_ENABLED: "false"
+      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://otel-collector:4318/v1/traces
+      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.1"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:18080/actuator/health/readiness || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    ports:
+      - "${BACKEND_PORT:-18080}:18080"
+    networks: [data, edge, observability]
+    deploy: { resources: { limits: { cpus: "2.0", memory: 1g } } }
+    stop_grace_period: 40s
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    logging: *default-logging
+
+  frontend:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.frontend
+    image: messaging-frontend:${IMAGE_TAG:-local}
+    restart: unless-stopped
+    depends_on:
+      backend: { condition: service_healthy }
+    ports:
+      - "${FRONTEND_PORT:-14200}:8080"
+    networks: [edge]
+    deploy: { resources: { limits: { cpus: "0.5", memory: 128m } } }
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    logging: *default-logging
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+      - --web.enable-lifecycle
+    volumes:
+      - ../../observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../../observability/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ../../observability/prometheus/recording-rules.yml:/etc/prometheus/recording-rules.yml:ro
+      - prom-data:/prometheus
+    ports:
+      - "127.0.0.1:19090:9090"
+    networks: [observability]
+    deploy: { resources: { limits: { cpus: "0.5", memory: 512m } } }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9090/-/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+
+  grafana:
+    image: grafana/grafana:11.2.2
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set in .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    volumes:
+      - ../../observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../../observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:13000:3000"
+    depends_on: [prometheus]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks: [observability]
+    deploy: { resources: { limits: { cpus: "0.5", memory: 384m } } }
+    logging: *default-logging
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.111.0
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ../../observability/otel/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    networks: [observability]
+    deploy: { resources: { limits: { cpus: "0.5", memory: 256m } } }
+    logging: *default-logging
+
+  k6:
+    image: grafana/k6:0.54.0
+    profiles: ["load"]
+    depends_on:
+      backend: { condition: service_healthy }
+    environment:
+      BASE_URL: ${K6_BASE_URL:-http://backend:18080}
+    volumes:
+      - ../../performance/k6:/scripts:ro
+    # Requires dev token endpoint (profile local). In prod-like the token helper must be replaced; see performance/README.md
+    command: ["run", "/scripts/submit-high-volume.js"]
+    networks: [edge]
+
+networks:
+  data: { driver: bridge, internal: true }
+  edge: { driver: bridge }
+  observability: { driver: bridge }
+
+volumes:
+  pg-data:
+  rabbit-data:
+  mongo-data:
+  prom-data:
+  grafana-data:

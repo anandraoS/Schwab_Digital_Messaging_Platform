@@ -1,0 +1,131 @@
+# Glossary
+
+One-line definitions, alphabetical. Project terms follow `docs/design/CONTRACT.md`. Other terms are general industry definitions. This is study material for a reference implementation, not a description of any employer's systems.
+
+- **ACID** - Atomicity, Consistency, Isolation, Durability: the guarantees of a database transaction.
+- **Ack (acknowledgment)** - A consumer's signal to the broker that a message was processed and can be removed from the queue.
+- **ADR (Architecture Decision Record)** - A short document recording one design decision, its context, and its consequences.
+- **Aggregate** - A cluster of related entities treated as one unit for consistency, with a single root.
+- **API gateway** - A front door that handles routing, authentication, rate limiting, and aggregation for backend APIs.
+- **At-least-once delivery** - A guarantee that a message is delivered one or more times, so consumers must tolerate duplicates.
+- **At-most-once delivery** - A guarantee that a message is delivered zero or one times, so loss is possible.
+- **Audit event** - An append-only record of who did what to which entity and when.
+- **Backoff** - Waiting longer between successive retries to give a failing dependency time to recover.
+- **Backpressure** - Slowing or rejecting producers when consumers or queues cannot keep up (the platform returns 503 with `Retry-After`).
+- **Bearer token** - A credential sent in the `Authorization` header that grants access to whoever holds it.
+- **Blue-green deployment** - Running two identical environments and switching traffic from the old to the new in one step.
+- **Bounce** - A provider report that a message could not be delivered, hard (permanent) or soft (temporary).
+- **Buildpack** - A tool that turns application source into a runnable image or droplet without a Dockerfile.
+- **Bulk job** - A batch send of one template to many recipients from a file, run with Spring Batch.
+- **Bulkhead** - Isolating resources (thread pools, queues) so one failing part cannot sink the rest.
+- **Callback (webhook)** - An HTTP request a provider sends to report delivery events.
+- **Canary release** - Sending a small share of traffic to a new version before full rollout.
+- **CAS (compare-and-set)** - An update that succeeds only if the current value matches what you expect, such as `UPDATE ... WHERE status=...`.
+- **Category** - A message class: TRANSACTIONAL, SECURITY_ALERT, SERVICE, or MARKETING, which drives consent rules.
+- **Channel** - The delivery medium: EMAIL, SMS, or PUSH.
+- **Chunk** - A group of items read, processed, and committed together in Spring Batch.
+- **Circuit breaker** - A guard that stops calling a failing dependency after repeated failures, then probes before resuming.
+- **Cloud Foundry** - An application platform where developers push code and the platform builds and runs it.
+- **Collapse key** - A push-notification key that lets a newer message replace an older pending one, making retries idempotent.
+- **Consent** - A recipient's permission to receive a class of messages on a channel.
+- **Consumer group / competing consumers** - Several workers reading one queue so each message is handled by one of them.
+- **Correlation ID** - An identifier carried through all calls and logs of one request to trace it end to end.
+- **CQRS** - Command Query Responsibility Segregation: separate models for writes and reads.
+- **CSRF** - Cross-site request forgery: tricking a browser into sending an unwanted authenticated request.
+- **Dead letter queue (DLQ)** - A queue holding messages that could not be processed after retries or were unprocessable.
+- **DELIVERY_UNKNOWN** - Status meaning the provider outcome is not known, so the system waits and reconciles instead of resending.
+- **Dependency injection** - Supplying an object's collaborators from outside instead of creating them inside.
+- **Dirty read** - Reading data another transaction has not yet committed.
+- **Dispatch** - The consumer-side processing of a queued message: policy check, render, provider call, outcome mapping.
+- **DispatchEnvelope** - The small queue payload (ids, channel, priority, attempt) that carries no content or PII.
+- **DLX (dead letter exchange)** - A RabbitMQ exchange that receives rejected or expired messages.
+- **DR (disaster recovery)** - The plan and capability to restore service after losing a site or region.
+- **Eventual consistency** - Replicas or views converge to the same state given time without new updates.
+- **Exactly-once** - Each message affects state exactly once; achievable only inside a controlled boundary, never across an external provider.
+- **Exponential backoff** - Retry delays that double each attempt up to a cap.
+- **FAILED** - Terminal-unless-operator status after a permanent failure.
+- **Fallback channel** - An alternative channel tried after permanent failure, only if consent allows.
+- **Fan-out** - Delivering one input to many consumers or recipients.
+- **Flyway** - A database migration tool that applies versioned SQL scripts in order.
+- **Four-eyes principle** - Two different people must author and approve a change (template author and approver differ).
+- **Full jitter** - Choosing the retry delay randomly between zero and the exponential ceiling to avoid synchronized retries.
+- **G1 GC** - The JVM's default region-based collector that targets pause-time goals.
+- **Garbage collection (GC)** - Automatic reclaiming of unreachable memory by the JVM.
+- **Graceful shutdown** - Stopping intake, finishing in-flight work, then exiting.
+- **Health probe** - A check (liveness, readiness, startup) used by the platform to decide whether to restart or route to an instance.
+- **HikariCP** - The default JDBC connection pool in Spring Boot.
+- **HMAC** - A keyed hash that proves a message came from a holder of the shared secret and was not altered.
+- **HPA (Horizontal Pod Autoscaler)** - A Kubernetes controller that scales pod count by metrics.
+- **Idempotency** - Repeating an operation has the same effect as doing it once.
+- **Idempotency key** - A client-supplied unique key that lets the server recognize and replay a duplicate request.
+- **Idempotency reference** - The `messageId:attemptGroup` value sent to providers so they can dedupe.
+- **In-flight** - Messages taken from the queue but not yet acknowledged.
+- **Isolation level** - The degree to which concurrent transactions are shielded from each other's effects.
+- **Jitter** - Random variation added to delays so many clients do not act at the same instant.
+- **JPA** - Java Persistence API, the standard object-relational mapping specification.
+- **JWKS** - A JSON Web Key Set: a published set of public keys used to verify JWTs.
+- **JWT** - JSON Web Token: a signed, compact token carrying claims.
+- **Kafka** - A distributed log platform for high-throughput streaming with replay.
+- **Lazy loading** - Fetching related data only when first accessed.
+- **Lifecycle (message)** - The state progression from ACCEPTED through terminal states such as DELIVERED.
+- **Little's law** - In-flight work equals arrival rate times time in system, used for concurrency sizing.
+- **Liveness probe** - A check that decides if a container is stuck and needs a restart.
+- **Lost update** - Two concurrent writers where one overwrites the other's change unnoticed.
+- **MDC** - Mapped Diagnostic Context: per-thread key-value data added to every log line.
+- **Micrometer** - The metrics facade used by Spring Boot to publish to systems like Prometheus.
+- **MongoDB** - A document database, used here only for best-effort provider diagnostics.
+- **Monotonic rank rule** - A lower-ranked delivery event never overwrites a higher-ranked status.
+- **Multi-tenancy** - One deployment serving several customers with strict data isolation.
+- **N+1 query problem** - One query for a list plus one query per item, instead of a single joined fetch.
+- **Non-repeatable read** - Re-reading a row inside a transaction returns a changed value.
+- **OAuth2** - An authorization framework for delegated access using tokens.
+- **OIDC (OpenID Connect)** - An identity layer on top of OAuth2 that adds an ID token.
+- **OpenAPI** - A machine-readable specification format for REST APIs.
+- **Optimistic locking** - Detecting conflicting writes with a version column and failing the stale one.
+- **Outbox pattern** - Writing an event row in the same transaction as the data change, then publishing it separately.
+- **OWASP** - An organization that publishes web security guidance such as the Top 10.
+- **Partition (data)** - Splitting a large table or log into smaller pieces by key or time.
+- **PCF** - Pivotal Cloud Foundry, a commercial distribution of Cloud Foundry.
+- **Pessimistic locking** - Locking rows up front (`SELECT ... FOR UPDATE`) to prevent concurrent modification.
+- **Phantom read** - A repeated query returns a different set of rows because of another transaction's insert or delete.
+- **PII** - Personally identifiable information, minimized and masked in logs and APIs.
+- **PKCE** - Proof Key for Code Exchange: protects the authorization code flow for public clients.
+- **Poison message** - A message that always fails processing and would loop forever without a limit.
+- **Policy service** - The component that applies recipient existence, suppression, consent, and quiet-hours rules.
+- **Prefetch** - How many unacknowledged messages a consumer may hold at once.
+- **Priority queue** - A queue that delivers higher-priority messages first (RabbitMQ `x-max-priority=9`).
+- **Provider** - An external service that actually sends email, SMS, or push (simulated in the reference project).
+- **Quiet hours** - A recipient-local time window in which non-urgent messages are deferred.
+- **RabbitMQ** - A message broker with exchanges, queues, priorities, TTL, and dead lettering.
+- **Rate limiting** - Capping the number of requests or sends per unit of time.
+- **Readiness probe** - A check that decides whether an instance should receive traffic.
+- **Reconciliation** - Comparing and correcting local state against the provider's truth, such as resolving DELIVERY_UNKNOWN.
+- **Redis** - An in-memory data store used here for idempotency fast-path and token buckets.
+- **Replay attack** - Re-sending a captured valid request to repeat its effect.
+- **Replay guard** - A cache of seen event ids that rejects repeated callbacks.
+- **Resilience4j** - A Java library providing circuit breaker, retry, rate limiter, and time limiter.
+- **Resource server** - An API that validates access tokens and serves protected resources.
+- **Retry storm** - Many clients retrying together and overloading a recovering service.
+- **RETRY_PENDING** - Status waiting for the backoff time to elapse before re-queueing.
+- **RPO (recovery point objective)** - The maximum acceptable amount of data loss, measured in time.
+- **RTO (recovery time objective)** - The maximum acceptable time to restore service.
+- **Saga** - A sequence of local transactions with compensating actions instead of one distributed transaction.
+- **Serializable** - The strictest isolation level, behaving as if transactions ran one at a time.
+- **Signature (callback)** - The `X-Signature: t=...,v1=...` header proving a callback's authenticity.
+- **SLA / SLO / SLI** - Contractual promise, internal target, and measured indicator of service quality.
+- **Spring Batch** - A framework for restartable, chunk-oriented bulk processing.
+- **Stuck message sweeper** - A scheduled job that moves long-stalled messages to DELIVERY_UNKNOWN or re-queues them.
+- **Suppression list** - Addresses blocked from receiving messages (hard bounce, complaint, regulatory).
+- **Template version pinning** - Fixing a message to a specific template version at accept time (ADR-0007).
+- **Tenant** - A customer organization whose data is isolated from others.
+- **Testcontainers** - A library that runs real dependencies in Docker containers for tests (not executed in the reference environment).
+- **Throughput** - Work completed per unit of time.
+- **Token bucket** - A rate limiter that adds tokens at a fixed rate and spends one per request, allowing bursts up to capacity.
+- **Transactional outbox** - See outbox pattern.
+- **TTL (time to live)** - How long a message or cache entry remains valid.
+- **Two-phase commit** - A protocol coordinating commit across several resources, avoided in favor of outbox and idempotency.
+- **Virtual threads** - Lightweight JVM threads (Java 21) that make blocking-style code scale.
+- **Webhook** - See callback.
+- **Write skew** - Two transactions each read overlapping data, write different rows, and together violate a rule.
+- **XSS** - Cross-site scripting: injecting script into pages viewed by other users.
+- **Zero trust** - A security stance of verifying every request regardless of network location.

@@ -1,0 +1,53 @@
+# Automated tests: deterministic, isolated H2 database per Spring context, generous API limits.
+spring:
+  datasource:
+    url: jdbc:h2:mem:msgtest-${random.uuid};MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ""
+  flyway:
+    locations: classpath:db/migration,classpath:db/seed
+  jpa:
+    properties:
+      hibernate:
+        generate_statistics: true
+
+management:
+  health:
+    redis:
+      enabled: false
+    rabbit:
+      enabled: false
+    mongo:
+      enabled: false
+
+logging:
+  level:
+    org.hibernate.engine.internal.StatisticalLoggingSessionEventListener: WARN
+    com.example.messaging: INFO
+    org.springframework.security: WARN
+
+messaging:
+  pipeline:
+    # Stage-1 style tests drive the lifecycle by hand: no background consumers or schedulers unless a test class asks
+    # for them (see AbstractPipelineIT).
+    auto-start: false
+    scheduler:
+      enabled: false
+  bus:
+    type: memory
+  coordination:
+    type: memory
+  api:
+    rate-per-sec: 10000
+    burst: 20000
+    max-body-bytes: 262144
+  security:
+    dev-token-enabled: true
+    docs-public: true
+    metrics-public: true
+  callback:
+    secrets:
+      simulated-email-key: local-dev-secret-not-for-production
+      simulated-sms-key: local-dev-secret-not-for-production
+      simulated-push-key: local-dev-secret-not-for-production
+      acme-sms-key: local-dev-secret-not-for-production

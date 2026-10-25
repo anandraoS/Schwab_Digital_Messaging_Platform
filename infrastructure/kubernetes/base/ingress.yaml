@@ -1,0 +1,21 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: backend
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "1m"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # do not expose actuator publicly: only /api and the HMAC callback path are routed
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [messaging.example.test]
+      secretName: messaging-tls   # created by cert-manager or manually; not in this repo
+  rules:
+    - host: messaging.example.test
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service: { name: backend, port: { number: 18080 } }

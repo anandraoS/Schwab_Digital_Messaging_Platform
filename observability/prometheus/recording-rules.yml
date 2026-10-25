@@ -1,0 +1,45 @@
+# Recording rules for SLIs. Metric names follow CONTRACT section 8 translated by Micrometer's Prometheus naming
+# (dots -> underscores, counters get _total, timers get _seconds).
+# NOTE: *_bucket series (histogram_quantile) require `management.metrics.distribution.percentiles-histogram.<meter>=true`
+# for http.server.requests, messaging.dispatch.delay and messaging.provider.latency. Not yet verified against the backend.
+groups:
+  - name: messaging-sli
+    interval: 30s
+    rules:
+      # ---- API availability / latency (SLO: 99.9% non-5xx, p95 < 300 ms on /api) ----
+      - record: sli:api_requests:rate5m
+        expr: sum(rate(http_server_requests_seconds_count{uri=~"/api/.*"}[5m]))
+      - record: sli:api_errors:rate5m
+        expr: sum(rate(http_server_requests_seconds_count{uri=~"/api/.*",status=~"5.."}[5m]))
+      - record: sli:api_error_ratio:rate5m
+        expr: sli:api_errors:rate5m / clamp_min(sli:api_requests:rate5m, 0.001)
+      - record: sli:api_error_ratio:rate1h
+        expr: sum(rate(http_server_requests_seconds_count{uri=~"/api/.*",status=~"5.."}[1h])) / clamp_min(sum(rate(http_server_requests_seconds_count{uri=~"/api/.*"}[1h])), 0.001)
+      - record: sli:api_error_ratio:rate30m
+        expr: sum(rate(http_server_requests_seconds_count{uri=~"/api/.*",status=~"5.."}[30m])) / clamp_min(sum(rate(http_server_requests_seconds_count{uri=~"/api/.*"}[30m])), 0.001)
+      - record: sli:api_error_ratio:rate6h
+        expr: sum(rate(http_server_requests_seconds_count{uri=~"/api/.*",status=~"5.."}[6h])) / clamp_min(sum(rate(http_server_requests_seconds_count{uri=~"/api/.*"}[6h])), 0.001)
+      - record: sli:api_latency_p95_seconds:rate5m
+        expr: histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{uri=~"/api/.*"}[5m])))
+
+      # ---- Dispatch ----
+      - record: sli:dispatch_delay_p95_seconds:rate5m
+        expr: histogram_quantile(0.95, sum by (le) (rate(messaging_dispatch_delay_seconds_bucket[5m])))
+      - record: sli:messages_accepted:rate5m
+        expr: sum(rate(messaging_messages_accepted_total[5m]))
+      - record: sli:queue_depth:total
+        expr: sum(messaging_queue_depth)
+
+      # ---- Providers ----
+      - record: sli:provider_calls:rate5m
+        expr: sum by (provider) (rate(messaging_provider_calls_total[5m]))
+      - record: sli:provider_failure_ratio:rate5m
+        expr: |
+          sum by (provider) (rate(messaging_provider_calls_total{outcome=~"TRANSIENT_FAILURE|PERMANENT_FAILURE|TIMEOUT|AMBIGUOUS"}[5m]))
+          / clamp_min(sum by (provider) (rate(messaging_provider_calls_total[5m])), 0.001)
+      - record: sli:provider_latency_p95_seconds:rate5m
+        expr: histogram_quantile(0.95, sum by (provider, le) (rate(messaging_provider_latency_seconds_bucket[5m])))
+
+      # ---- Callbacks ----
+      - record: sli:callbacks_invalid_signature:rate5m
+        expr: sum(rate(messaging_callbacks_total{result="invalid_signature"}[5m]))

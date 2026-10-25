@@ -1,0 +1,170 @@
+# Alert rules (illustrative thresholds; tune from measured baselines). promtool NOT available here: parsed as YAML only.
+# Metric names: CONTRACT section 8 in Micrometer->Prometheus form. runbook_url is a repo-relative path.
+groups:
+  - name: messaging-providers
+    rules:
+      - alert: ProviderErrorRatioHigh
+        expr: sli:provider_failure_ratio:rate5m > 0.2 and sli:provider_calls:rate5m > 0.5
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "Provider {{ $labels.provider }} failing {{ $value | humanizePercentage }} of calls"
+          description: "More than 20% of provider calls failed (transient/permanent/timeout/ambiguous) for 5m."
+          runbook_url: docs/operations/runbooks/provider-outage.md
+      - alert: ProviderCircuitOpen
+        expr: messaging_provider_circuit_state == 2
+        for: 2m
+        labels: { severity: page }
+        annotations:
+          summary: "Circuit breaker OPEN for provider {{ $labels.provider }}"
+          description: "Dispatch to this provider is short-circuited; messages go to retry/fallback."
+          runbook_url: docs/operations/runbooks/provider-outage.md
+      - alert: ProviderRateLimited
+        expr: sum by (provider) (rate(messaging_provider_calls_total{outcome="RATE_LIMITED"}[5m])) > 1
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Provider {{ $labels.provider }} is rate limiting us"
+          description: "Sustained RATE_LIMITED outcomes; check configured messaging.providers.<id>.rate-per-sec vs provider quota."
+          runbook_url: docs/operations/runbooks/provider-rate-limit.md
+
+  - name: messaging-queues
+    rules:
+      - alert: QueueDepthHigh
+        expr: sum(messaging_queue_depth) > 10000
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "Dispatch backlog {{ $value }} messages for 10m"
+          description: "Queue depth above 10k. Compare consumer concurrency, provider health and ingest rate."
+          runbook_url: docs/operations/runbooks/queue-backlog.md
+      - alert: QueueBacklogGrowing
+        expr: deriv(sum(messaging_queue_depth)[15m:1m]) > 5 and sum(messaging_queue_depth) > 1000
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Queue depth rising steadily (>5 msg/s net)"
+          description: "Ingest exceeds drain rate. Oldest-message age is approximated by dispatch delay below (no dedicated metric in CONTRACT)."
+          runbook_url: docs/operations/runbooks/queue-backlog.md
+      - alert: DispatchDelayHigh
+        expr: sli:dispatch_delay_p95_seconds:rate5m > 30
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "p95 accepted-to-provider delay {{ $value | humanizeDuration }}"
+          description: "SLO: p95 dispatch delay under 30s. Needs histogram buckets enabled for messaging.dispatch.delay."
+          runbook_url: docs/operations/runbooks/queue-backlog.md
+      - alert: DlqGrowth
+        expr: increase(messaging_deadletter_total[15m]) > 20 or messaging_queue_dlq_depth > 100
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "Dead-letter growth ({{ $value }})"
+          description: "DLQ is growing or above 100 messages; inspect reasons (RETRIES_EXHAUSTED, POISON_MESSAGE, PERMANENT_FAILURE)."
+          runbook_url: docs/operations/runbooks/dlq-growth.md
+      - alert: RetryStorm
+        expr: sum(rate(messaging_retry_scheduled_total[5m])) > 0.5 * clamp_min(sum(rate(messaging_messages_accepted_total[5m])), 1) and sum(rate(messaging_retry_scheduled_total[5m])) > 5
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "Retries are above 50% of the accept rate"
+          description: "Retry amplification: check provider health, backoff configuration and circuit breaker."
+          runbook_url: docs/operations/runbooks/retry-storm.md
+      - alert: DeliveryUnknownGrowth
+        expr: sum(increase(messaging_transitions_total{to="DELIVERY_UNKNOWN"}[15m])) > 25
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "DELIVERY_UNKNOWN transitions rising ({{ $value }} in 15m)"
+          description: "Ambiguous provider outcomes or consumer crashes after provider acceptance; reconciliation required (no blind retries)."
+          runbook_url: docs/operations/runbooks/consumer-crash-ambiguous-outcomes.md
+
+  - name: messaging-callbacks
+    rules:
+      - alert: CallbackInvalidSignatureSpike
+        expr: sli:callbacks_invalid_signature:rate5m > 0.2
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "Invalid callback signatures {{ $value }}/s"
+          description: "Possible secret rotation mismatch or forged callbacks."
+          runbook_url: docs/operations/runbooks/callback-signature-failures.md
+
+  - name: messaging-api
+    rules:
+      # Multi-window multi-burn-rate for a 99.9% availability SLO (error budget 0.1%).
+      - alert: ApiErrorBudgetFastBurn
+        expr: sli:api_error_ratio:rate5m > (14.4 * 0.001) and sli:api_error_ratio:rate1h > (14.4 * 0.001)
+        for: 2m
+        labels: { severity: page }
+        annotations:
+          summary: "API 5xx burning the 99.9% budget at >14x"
+          description: "5xx ratio over both 5m and 1h exceeds 1.44%."
+          runbook_url: docs/operations/runbooks/high-api-latency.md
+      - alert: ApiErrorBudgetSlowBurn
+        expr: sli:api_error_ratio:rate30m > (6 * 0.001) and sli:api_error_ratio:rate6h > (6 * 0.001)
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "API 5xx burning the 99.9% budget at >6x"
+          description: "5xx ratio over both 30m and 6h exceeds 0.6%."
+          runbook_url: docs/operations/runbooks/high-api-latency.md
+      - alert: ApiLatencyP95High
+        expr: sli:api_latency_p95_seconds:rate5m > 0.3
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "API p95 latency {{ $value | humanizeDuration }} (SLO 300ms)"
+          description: "Requires histogram buckets for http.server.requests."
+          runbook_url: docs/operations/runbooks/high-api-latency.md
+      - alert: BackendDown
+        expr: up{job=~"messaging-backend.*"} == 0
+        for: 2m
+        labels: { severity: page }
+        annotations:
+          summary: "Backend instance {{ $labels.instance }} is not scraped"
+          description: "Prometheus cannot scrape the backend: crashed, restarting, or network issue."
+          runbook_url: docs/operations/runbooks/high-api-latency.md
+
+  - name: messaging-platform-health
+    rules:
+      - alert: HikariPoolSaturation
+        expr: (hikaricp_connections_active / hikaricp_connections_max) > 0.9 or hikaricp_connections_pending > 5
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "DB pool saturated on {{ $labels.instance }}"
+          description: "Active/max > 90% or threads waiting for a connection; possible slow queries or database outage."
+          runbook_url: docs/operations/runbooks/database-outage.md
+      - alert: JvmGcPauseHigh
+        expr: sum by (instance) (rate(jvm_gc_pause_seconds_sum[5m])) > 0.1
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "GC consuming >10% of wall time on {{ $labels.instance }}"
+          description: "Check heap sizing (MaxRAMPercentage), allocation spikes, memory leaks."
+          runbook_url: docs/operations/runbooks/high-api-latency.md
+      - alert: RedisFallbackActive
+        expr: increase(messaging_redis_fallback_total[5m]) > 0
+        for: 5m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Coordination layer is falling back from Redis"
+          description: "Rate limiting/idempotency fast-path are degraded to DB/in-memory; correctness holds, performance and limits are weaker."
+          runbook_url: docs/operations/runbooks/redis-outage.md
+      - alert: BulkJobStalled
+        expr: (changes(messaging_bulk_progress[10m]) == 0) and (messaging_bulk_progress > 0) and (messaging_bulk_progress < 1)
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Bulk job {{ $labels.jobId }} has made no progress for 10m"
+          description: "Assumes messaging.bulk.progress is a 0..1 fraction. Check job status and restart if STOPPED/FAILED."
+          runbook_url: docs/operations/runbooks/bulk-job-restart.md
+      - alert: DiagnosticsWriteFailures
+        expr: increase(messaging_diagnostics_write_failures_total[15m]) > 10
+        for: 5m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Mongo diagnostics writes failing (best-effort, message flow unaffected)"
+          description: "Provider diagnostics archive is losing documents."
+          runbook_url: docs/operations/runbooks/database-outage.md

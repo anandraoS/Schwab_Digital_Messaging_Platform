@@ -1,0 +1,273 @@
+# CI pipeline. NOT executed: no GitHub Actions run has happened for this file; YAML syntax was parsed locally only.
+# Third-party actions are pinned to version tags for readability; pin to commit SHAs before using in a real org.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      deploy_test:
+        description: "Deploy to the Cloud Foundry test space after a green build (needs secrets)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_VERSION: "21"
+  NODE_VERSION: "22"
+  BACKEND_DIR: backend
+  FRONTEND_DIR: frontend/messaging-console
+  VERSION_BASE: "0.1"
+
+jobs:
+  version:
+    name: Compute version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      image_tag: ${{ steps.v.outputs.image_tag }}
+    steps:
+      - id: v
+        run: |
+          SHA7="${GITHUB_SHA::7}"
+          VERSION="${VERSION_BASE}.${GITHUB_RUN_NUMBER}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${VERSION}-${SHA7}" >> "$GITHUB_OUTPUT"
+          echo "Version ${VERSION} (image tag ${VERSION}-${SHA7})"
+
+  backend-build-test:
+    name: Backend build + unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+      - name: mvn verify
+        run: mvn -B -f ${{ env.BACKEND_DIR }}/pom.xml verify
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-test-reports
+          path: ${{ env.BACKEND_DIR }}/target/surefire-reports
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend-jar
+          path: ${{ env.BACKEND_DIR }}/target/*.jar
+          if-no-files-found: error
+
+  backend-integration-tests:
+    name: Backend integration tests (Testcontainers)
+    runs-on: ubuntu-latest
+    needs: backend-build-test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+      - name: mvn verify -Pcontainers (PostgreSQL, RabbitMQ, Redis, Mongo containers)
+        run: mvn -B -f ${{ env.BACKEND_DIR }}/pom.xml verify -Pcontainers
+
+  static-analysis:
+    name: Static analysis (SpotBugs/Checkstyle/PMD via profile)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+      # Requires profile static-analysis in backend/pom.xml; Maven only warns if a profile id is absent, so this step also
+      # asserts the profile exists to avoid a silently empty gate.
+      - name: Assert profile exists
+        run: grep -q "<id>static-analysis</id>" ${{ env.BACKEND_DIR }}/pom.xml
+      - name: mvn -Pstatic-analysis verify
+        run: mvn -B -f ${{ env.BACKEND_DIR }}/pom.xml -Pstatic-analysis -DskipTests verify
+
+  owasp-dependency-check:
+    name: OWASP dependency-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+      - name: mvn -Psecurity-scan (NVD_API_KEY optional; scans are slow without it)
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        run: mvn -B -f ${{ env.BACKEND_DIR }}/pom.xml -Psecurity-scan -DskipTests verify -DnvdApiKey="${NVD_API_KEY}"
+
+  frontend:
+    name: Angular lint, test, build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend/messaging-console
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/messaging-console/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Lint (if configured)
+        run: npm run lint --if-present
+      - name: Unit tests (Karma, headless Chrome)
+        run: npm test -- --watch=false --browsers=ChromeHeadless
+      - name: Production build
+        run: npx ng build --configuration production
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/messaging-console/dist
+          if-no-files-found: error
+
+  npm-audit:
+    name: npm audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend/messaging-console
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: npm ci --no-audit --no-fund
+      - name: Fail on high/critical (production deps)
+        run: npm audit --omit=dev --audit-level=high
+
+  config-validation:
+    name: Config validation (compose, kustomize, helm, CF, shellcheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: docker compose config
+        run: docker compose --env-file .env.example -f infrastructure/compose/docker-compose.yml config -q
+      - name: Kustomize build + kubeconform
+        run: |
+          KC_VERSION=v0.6.7
+          curl -sSL "https://github.com/yannh/kubeconform/releases/download/${KC_VERSION}/kubeconform-linux-amd64.tar.gz" | tar xz kubeconform
+          for o in dev prod-like; do
+            kubectl kustomize infrastructure/kubernetes/overlays/$o | ./kubeconform -strict -ignore-missing-schemas -summary
+          done
+      - name: helm lint + template
+        run: |
+          helm lint infrastructure/helm/messaging-platform
+          helm lint infrastructure/helm/messaging-platform -f infrastructure/helm/messaging-platform/values-prod-like.yaml
+          helm template t infrastructure/helm/messaging-platform -f infrastructure/helm/messaging-platform/values-prod-like.yaml > /dev/null
+      - name: Cloud Foundry manifest validation
+        run: node cloud-foundry/validate-manifest.mjs
+      - name: shellcheck
+        run: find scripts cloud-foundry -name '*.sh' -print0 | xargs -0 shellcheck -S warning
+      - name: promtool
+        run: |
+          docker run --rm --entrypoint promtool -v "$PWD/observability/prometheus:/p:ro" prom/prometheus:v2.54.1 check rules /p/alerts.yml /p/recording-rules.yml
+      - name: Repo static checks
+        run: bash scripts/validate-infra.sh
+
+  docker-build-scan:
+    name: Docker build, Trivy scan, SBOM
+    runs-on: ubuntu-latest
+    needs: [version, backend-build-test, frontend]
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      matrix:
+        image: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build ${{ matrix.image }} image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infrastructure/docker/Dockerfile.${{ matrix.image }}
+          load: true
+          push: false
+          tags: messaging-${{ matrix.image }}:${{ needs.version.outputs.image_tag }}
+          build-args: |
+            VERSION=${{ needs.version.outputs.version }}
+            GIT_SHA=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+      - name: Trivy image scan (HIGH/CRITICAL fail the build)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: messaging-${{ matrix.image }}:${{ needs.version.outputs.image_tag }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+      - name: Generate SBOM (CycloneDX JSON)
+        uses: anchore/sbom-action@v0
+        with:
+          image: messaging-${{ matrix.image }}:${{ needs.version.outputs.image_tag }}
+          format: cyclonedx-json
+          output-file: sbom-${{ matrix.image }}.cdx.json
+          artifact-name: sbom-${{ matrix.image }}
+
+  deploy-test:
+    name: Deploy to Cloud Foundry test (manual)
+    runs-on: ubuntu-latest
+    needs: [docker-build-scan, backend-integration-tests, config-validation, owasp-dependency-check, npm-audit, static-analysis]
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy_test == true && github.ref == 'refs/heads/main'
+    environment: test
+    env:
+      CF_API: ${{ secrets.CF_API }}
+      CF_USERNAME: ${{ secrets.CF_USERNAME }}
+      CF_PASSWORD: ${{ secrets.CF_PASSWORD }}
+      CF_ORG: ${{ secrets.CF_ORG }}
+      CF_SPACE: ${{ secrets.CF_SPACE }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check deploy secrets
+        id: gate
+        run: |
+          if [ -z "${CF_API}" ] || [ -z "${CF_USERNAME}" ] || [ -z "${CF_PASSWORD}" ]; then
+            echo "CF secrets not configured: skipping deploy (this is not a pass for deployment)." >> "$GITHUB_STEP_SUMMARY"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/download-artifact@v4
+        if: steps.gate.outputs.run == 'true'
+        with:
+          name: backend-jar
+          path: backend/target
+      - name: Install cf CLI
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          curl -sSL "https://packages.cloudfoundry.org/stable?release=linux64-binary&version=v8&source=github" | tar -zx cf8
+          sudo mv cf8 /usr/local/bin/cf
+      - name: cf login + rolling push
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          cf api "${CF_API}"
+          cf auth   # reads CF_USERNAME / CF_PASSWORD from the environment
+          cf target -o "${CF_ORG}" -s "${CF_SPACE}"
+          bash cloud-foundry/scripts/deploy.sh test
+      - name: Post-deploy smoke tests
+        if: steps.gate.outputs.run == 'true'
+        run: bash cloud-foundry/scripts/smoke.sh test

@@ -1,0 +1,222 @@
+{
+  "ui": "http://127.0.0.1:14300",
+  "persona": "platform-admin",
+  "at": "2026-10-18T16:13:45.027Z",
+  "pages": [
+    {
+      "path": "/login",
+      "title": "Sign in",
+      "screenshot": "C:\\Users\\sahukari.rao\\Downloads\\prepearation\\schwab-digital-messaging-platform\\docs\\validation\\screenshots\\01-login.png",
+      "errorBanner": false,
+      "label": "/login",
+      "consoleErrors": [],
+      "apiFailures": [],
+      "textStart": "Messaging Operations Console Development sign-in: pick a persona. A signed dev token is requested from /dev/token and kept in memory and sessionStorage. This pa",
+      "note": ""
+    },
+    {
+      "path": "/dashboard",
+      "title": "Dashboard",
+      "screenshot": "C:\\Users\\sahukari.rao\\Downloads\\prepearation\\schwab-digital-messaging-platform\\docs\\validation\\screenshots\\02-dashboard.png",
+      "errorBanner": false,
+      "label": "/dashboard",
+      "consoleErrors": [],
+      "apiFailures": [],
+      "textStart": "Skip to content Messaging Operations Console Tenant scope (X-Tenant-Id) platform-admin (PLATFORM_ADMIN · *) Sign out Dashboard Messages New message Templates Pr",
+      "note": ""
+    },
+    {
+      "path": "/messages",
+      "title": "Messages",
+      "screenshot": "C:\\Users\\sahukari.rao\\Downloads\\prepearation\\schwab-digital-messaging-platform\\docs\\validation\\screenshots\\03-messages.png",
+      "errorBanner": false,
+      "label": "/messages",
+      "consoleErrors": [],
+      "apiFailures": [],
+      "textStart": "Skip to content Messaging Operations Console Tenant scope (X-Tenant-Id) platform-admin (PLATFORM_ADMIN · *) Sign out Dashboard Messages New message Templates Pr",
+      "note": ""
+    },
+    {
+      "path": "/messages/new",
+      "title": "New message",
+      "screenshot": "C:\\Users\\sahukari.rao\\Downloads\\prepearation\\schwab-digital-messaging-platform\\docs\\validation\\screenshots\\04-new-message.png",
+      "errorBanner": false,
+      "label": "/messages/new",
+      "consoleErrors": [],
+      "apiFailures": [],
+      "textStart": "Skip to content Messaging Operations Console Tenant scope (X-Tenant-Id) platform-admin (PLATFORM_ADMIN · *) Sign out Dashboard Messages New message Templates Pr",
+      "note": ""
+    },
+    {
+      "path": "/messages/e58d3ec4-cffd-46ea-8720-83f56f86da09",
+      "title": "Message detail",
+      "screenshot": "C:\\Users\\sahukari.rao\\Downloads\\prepearation\\schwab-digital-messaging-platform\\docs\\validation\\screenshots\\05-message-detail.png",
+      "errorBanner": false,
+      "label": "/messages/e58d3ec4-cffd-46ea-8720-83f56f86da09",
+      "consoleErrors": [],
+      "apiFailures": [],
+      "textStart": "Skip to content Messaging Operations Console Tenant scope (X-Tenant-Id) platform-admin (PLATFORM_ADMIN · *) Sign out Dashboard Messages New message Templates Pr",
+      "note": ""
+    },
+    {
+      "path": "/templates",
+      "title": "Templates",
+      "screenshot": "C:\\Users\\sahukari.rao\\Downloads\\prepearation\\schwab-digital-messaging-platform\\docs\\validation\\screenshots\\06-templates.png",
+      "errorBanner": false,
+      "label": "/templates",
+      "consoleErrors": [],
+      "apiFailures": [],
+      "textStart": "Skip to content Messaging Operations Console Tenant scope (X-Tenant-Id) platform-admin (PLATFORM_ADMIN · *) Sign out Dashboard Messages New message Templates Pr",
+      "note": ""
+    },
+    {
+      "path": "/templates/6974a25b-b912-4c11-a658-af83985b9f78",
+      "title": "Template",
+      "screenshot": "C:\\Users\\sahukari.rao\\Downloads\\prepearation\\schwab-digital-messaging-platform\\docs\\validation\\screenshots\\07-template-detail.png",
+      "errorBanner": false,
+      "label": "/templates/6974a25b-b912-4c11-a658-af83985b9f78",
+      "consoleErrors": [],
+      "apiFailures": [],
+      "textStart": "Skip to content Messaging Operations Console Tenant scope (X-Tenant-Id) platform-admin (PLATFORM_ADMIN · *) Sign out Dashboard Messages New message Templates Pr",
+      "note": ""
+    },
+    {
+      "path": "/queues",
+      "title": "Queues",
+      "screenshot": "C:\\Users\\sahukari.rao\\Downloads\\prepearation\\schwab-digital-messaging-platform\\docs\\validation\\screenshots\\08-queues.png",
+      "errorBanner": false,
+      "label": "/queues",
+      "consoleErrors": [],
+      "apiFailures": [],
+      "textStart": "Skip to content Messaging Operations Console Tenant scope (X-Tenant-Id) platform-admin (PLATFORM_ADMIN · *) Sign out Dashboard Messages New message Templates Pr",
+      "note": ""
+    },
+    {
+      "path": "/providers",
+      "title": "Providers",
+      "screenshot": "C:\\Users\\sahukari.rao\\Downloads\\prepearation\\schwab-digital-messaging-platform\\docs\\validation\\screenshots\\09-providers.png",
+      "errorBanner": false,
+      "label": "/providers",
+      "consoleErrors": [],
+      "apiFailures": [],
+      "textStart": "Skip to content Messaging Operations Console Tenant scope (X-Tenant-Id) platform-admin (PLATFORM_ADMIN · *) Sign out Dashboard Messages New message Templates Pr",
+      "note": ""
+    },
+    {
+      "path": "/bulk-jobs",
+      "title": "Bulk jobs",
+      "screenshot": "C:\\Users\\sahukari.rao\\Downloads\\prepearation\\schwab-digital-messaging-platform\\docs\\validation\\screenshots\\10-bulk-jobs.png",
+      "errorBanner": false,
+      "label": "/bulk-jobs",
+      "consoleErrors": [],
+      "apiFailures": [],
+      "textStart": "Skip to content Messaging Operations Console Tenant scope (X-Tenant-Id) platform-admin (PLATFORM_ADMIN · *) Sign out Dashboard Messages New message Templates Pr",
+      "note": ""
+    },
+    {
+      "path": "/dead-letters",
+      "title": "Dead letters",
+      "screenshot": "C:\\Users\\sahukari.rao\\Downloads\\prepearation\\schwab-digital-messaging-platform\\docs\\validation\\screenshots\\11-dead-letters.png",
+      "errorBanner": false,
+      "label": "/dead-letters",
+      "consoleErrors": [],
+      "apiFailures": [],
+      "textStart": "Skip to content Messaging Operations Console Tenant scope (X-Tenant-Id) platform-admin (PLATFORM_ADMIN · *) Sign out Dashboard Messages New message Templates Pr",
+      "note": ""
+    },
+    {
+      "path": "/failed",
+      "title": "Failed messages",
+      "screenshot": "C:\\Users\\sahukari.rao\\Downloads\\prepearation\\schwab-digital-messaging-platform\\docs\\validation\\screenshots\\12-failed.png",
+      "errorBanner": false,
+      "label": "/failed",
+      "consoleErrors": [],
+      "apiFailures": [],
+      "textStart": "Skip to content Messaging Operations Console Tenant scope (X-Tenant-Id) platform-admin (PLATFORM_ADMIN · *) Sign out Dashboard Messages New message Templates Pr",
+      "note": ""
+    },
+    {
+      "path": "/audit",
+      "title": "Audit history",
+      "screenshot": "C:\\Users\\sahukari.rao\\Downloads\\prepearation\\schwab-digital-messaging-platform\\docs\\validation\\screenshots\\13-audit.png",
+      "errorBanner": false,
+      "label": "/audit",
+      "consoleErrors": [],
+      "apiFailures": [],
+      "textStart": "Skip to content Messaging Operations Console Tenant scope (X-Tenant-Id) platform-admin (PLATFORM_ADMIN · *) Sign out Dashboard Messages New message Templates Pr",
+      "note": ""
+    },
+    {
+      "path": "/delivery-events",
+      "title": "Delivery events",
+      "screenshot": "C:\\Users\\sahukari.rao\\Downloads\\prepearation\\schwab-digital-messaging-platform\\docs\\validation\\screenshots\\14-delivery-events.png",
+      "errorBanner": false,
+      "label": "/delivery-events",
+      "consoleErrors": [],
+      "apiFailures": [],
+      "textStart": "Skip to content Messaging Operations Console Tenant scope (X-Tenant-Id) platform-admin (PLATFORM_ADMIN · *) Sign out Dashboard Messages New message Templates Pr",
+      "note": ""
+    },
+    {
+      "path": "/preferences",
+      "title": "Preferences",
+      "screenshot": "C:\\Users\\sahukari.rao\\Downloads\\prepearation\\schwab-digital-messaging-platform\\docs\\validation\\screenshots\\15-preferences.png",
+      "errorBanner": false,
+      "label": "/preferences",
+      "consoleErrors": [],
+      "apiFailures": [],
+      "textStart": "Skip to content Messaging Operations Console Tenant scope (X-Tenant-Id) platform-admin (PLATFORM_ADMIN · *) Sign out Dashboard Messages New message Templates Pr",
+      "note": ""
+    },
+    {
+      "path": "/admin",
+      "title": "Admin",
+      "screenshot": "C:\\Users\\sahukari.rao\\Downloads\\prepearation\\schwab-digital-messaging-platform\\docs\\validation\\screenshots\\16-admin.png",
+      "errorBanner": false,
+      "label": "/admin",
+      "consoleErrors": [],
+      "apiFailures": [],
+      "textStart": "Skip to content Messaging Operations Console Tenant scope (X-Tenant-Id) platform-admin (PLATFORM_ADMIN · *) Sign out Dashboard Messages New message Templates Pr",
+      "note": ""
+    },
+    {
+      "path": "flow:submit-message",
+      "label": "submit-message",
+      "consoleErrors": [],
+      "apiFailures": [],
+      "errorBanner": false
+    },
+    {
+      "path": "flow:preferences-edit",
+      "label": "preferences-edit",
+      "consoleErrors": [],
+      "apiFailures": [],
+      "errorBanner": false
+    },
+    {
+      "path": "flow:bulk-generate",
+      "label": "bulk-generate",
+      "consoleErrors": [],
+      "apiFailures": [],
+      "errorBanner": false
+    },
+    {
+      "path": "/dead-letters",
+      "title": "Dead letters",
+      "screenshot": "C:\\Users\\sahukari.rao\\Downloads\\prepearation\\schwab-digital-messaging-platform\\docs\\validation\\screenshots\\23-dead-letters-after.png",
+      "errorBanner": false,
+      "label": "/dead-letters",
+      "consoleErrors": [],
+      "apiFailures": [],
+      "textStart": "Skip to content Messaging Operations Console Tenant scope (X-Tenant-Id) platform-admin (PLATFORM_ADMIN · *) Sign out Dashboard Messages New message Templates Pr",
+      "note": ""
+    },
+    {
+      "path": "flow:create-template",
+      "label": "create-template",
+      "consoleErrors": [],
+      "apiFailures": [],
+      "errorBanner": false
+    }
+  ]
+}

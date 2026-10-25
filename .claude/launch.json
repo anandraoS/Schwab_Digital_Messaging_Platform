@@ -1,0 +1,16 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "console-ui-14300-api-18280",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["C:/Users/sahukari.rao/Downloads/prepearation/schwab-digital-messaging-platform/scripts/serve-ui.sh", "14300", "18280"],
+      "port": 14300
+    },
+    {
+      "name": "backend-18280-attached",
+      "url": "http://localhost:18280",
+      "port": 18280
+    }
+  ]
+}

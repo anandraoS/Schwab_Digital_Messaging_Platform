@@ -1,0 +1,14 @@
+**/node_modules
+**/target
+**/.angular
+**/dist
+.git
+.github
+.work
+tools
+*.zip
+**/*.log
+**/.env
+.env
+docs/pdf
+performance/node-load/results

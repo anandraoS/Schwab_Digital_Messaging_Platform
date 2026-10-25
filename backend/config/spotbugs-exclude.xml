@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SpotBugs exclusions. Each entry names the pattern and the reason; nothing is excluded wholesale.
+  Add an entry only after reading the finding and deciding it is a false positive for this code base.
+-->
+<FindBugsFilter>
+  <!-- Spring beans and @ConfigurationProperties records hold injected collaborators by design (not "malicious code"). -->
+  <Match>
+    <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+  </Match>
+  <!-- Lombok-free entities use JPA field access with protected no-arg constructors and generated serialVersionUIDs are not needed. -->
+  <Match>
+    <Bug pattern="SE_NO_SERIALVERSIONID"/>
+  </Match>
+  <!-- Fail-fast validation in constructors of Spring singleton beans (duplicate provider id / payload mapper id at
+       startup). Nobody can subclass-and-finalize a half built bean, and finalizers are deprecated in Java 21. -->
+  <Match>
+    <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+    <Or>
+      <Class name="com.example.messaging.callback.EventNormalizer"/>
+      <Class name="com.example.messaging.provider.ProviderRegistry"/>
+    </Or>
+  </Match>
+</FindBugsFilter>

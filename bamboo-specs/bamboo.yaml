@@ -1,0 +1,184 @@
+---
+# Bamboo YAML Specs. NOT executed: no Bamboo server available. Syntax parsed locally only.
+# Secrets are Bamboo global/plan variables referenced as ${bamboo.<name>} (mark password variables with the "password" or
+# "secret" suffix so Bamboo masks them). No values are stored in this repository.
+version: 2
+plan:
+  project-key: MSG
+  key: PLATFORM
+  name: Messaging Platform CI
+
+stages:
+  - Build and Test:
+      manual: false
+      jobs:
+        - Backend Verify
+        - Frontend Build
+        - Static Analysis
+  - Security and Integration:
+      jobs:
+        - Dependency Check
+        - Integration Tests
+        - Config Validation
+  - Package:
+      jobs:
+        - Docker Images
+  - Deploy Test:
+      manual: true
+      jobs:
+        - Deploy Test CF
+
+variables:
+  version_base: "0.1"
+  nvd_api_key_password: CHANGE_ME_LOCAL_ONLY
+  cf_username: CHANGE_ME_LOCAL_ONLY
+  cf_password_password: CHANGE_ME_LOCAL_ONLY
+
+Backend Verify:
+  key: BV
+  tasks:
+    - checkout:
+        force-clean-build: true
+    - script:
+        interpreter: SHELL
+        scripts:
+          - mvn -B -f backend/pom.xml verify
+  final-tasks:
+    - test-parser:
+        type: junit
+        test-results: backend/target/surefire-reports/*.xml
+  artifacts:
+    - name: backend-jar
+      pattern: backend/target/*.jar
+      shared: true
+  requirements:
+    - JDK21
+
+Frontend Build:
+  key: FB
+  tasks:
+    - checkout
+    - script:
+        interpreter: SHELL
+        working-dir: frontend/messaging-console
+        scripts:
+          - npm ci --no-audit --no-fund
+          - npm run lint --if-present
+          - npm test -- --watch=false --browsers=ChromeHeadless
+          - npx ng build --configuration production
+  artifacts:
+    - name: frontend-dist
+      location: frontend/messaging-console/dist
+      pattern: "**/*"
+      shared: true
+
+Static Analysis:
+  key: SA
+  tasks:
+    - checkout
+    - script:
+        interpreter: SHELL
+        scripts:
+          - mvn -B -f backend/pom.xml -Pstatic-analysis -DskipTests verify
+
+Dependency Check:
+  key: DC
+  tasks:
+    - checkout
+    - script:
+        interpreter: SHELL
+        scripts:
+          - mvn -B -f backend/pom.xml -Psecurity-scan -DskipTests verify -DnvdApiKey="${bamboo.nvd_api_key_password}"
+    - script:
+        interpreter: SHELL
+        working-dir: frontend/messaging-console
+        scripts:
+          - npm ci --no-audit --no-fund
+          - npm audit --omit=dev --audit-level=high
+
+Integration Tests:
+  key: IT
+  tasks:
+    - checkout
+    - script:
+        interpreter: SHELL
+        scripts:
+          - mvn -B -f backend/pom.xml verify -Pcontainers
+  requirements:
+    - Docker
+
+Config Validation:
+  key: CV
+  tasks:
+    - checkout
+    - script:
+        interpreter: SHELL
+        scripts:
+          - docker compose --env-file .env.example -f infrastructure/compose/docker-compose.yml config -q
+          - node cloud-foundry/validate-manifest.mjs
+          - bash scripts/validate-infra.sh
+
+Docker Images:
+  key: DI
+  tasks:
+    - checkout
+    - script:
+        interpreter: SHELL
+        scripts:
+          - export APP_VERSION="${bamboo.version_base}.${bamboo.buildNumber}"
+          - export IMAGE_TAG="${APP_VERSION}-$(git rev-parse --short=7 HEAD)"
+          - docker build -f infrastructure/docker/Dockerfile.backend --build-arg VERSION="${APP_VERSION}" -t messaging-backend:${IMAGE_TAG} .
+          - docker build -f infrastructure/docker/Dockerfile.frontend -t messaging-frontend:${IMAGE_TAG} .
+          - trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 messaging-backend:${IMAGE_TAG}
+          - trivy image --format cyclonedx --output sbom-backend.cdx.json messaging-backend:${IMAGE_TAG}
+  artifacts:
+    - name: sbom
+      pattern: sbom-*.cdx.json
+      shared: false
+  requirements:
+    - Docker
+
+Deploy Test CF:
+  key: DT
+  tasks:
+    - checkout
+    - artifact-download:
+        source-plan: MSG-PLATFORM
+    - script:
+        interpreter: SHELL
+        environment: CF_USERNAME=${bamboo.cf_username} CF_PASSWORD=${bamboo.cf_password_password}
+        scripts:
+          - cf api "${bamboo.cf_api}"
+          - cf auth
+          - cf target -o "${bamboo.cf_org}" -s "${bamboo.cf_space}"
+          - bash cloud-foundry/scripts/deploy.sh test
+          - bash cloud-foundry/scripts/smoke.sh test
+
+triggers:
+  - polling:
+      period: 180
+
+branches:
+  create: for-pull-request
+  delete:
+    after-deleted-days: 7
+    after-inactive-days: 30
+
+notifications: []
+---
+version: 2
+deployment:
+  name: Messaging Platform Test Deployment
+  source-plan: MSG-PLATFORM
+release-naming: ${bamboo.version_base}.${bamboo.buildNumber}
+environments:
+  - Test
+Test:
+  tasks:
+    - clean
+    - artifact-download:
+        destination: .
+    - script:
+        interpreter: SHELL
+        scripts:
+          - echo "Deployment project placeholder: run cloud-foundry/scripts/deploy.sh test with credentials from Bamboo variables"

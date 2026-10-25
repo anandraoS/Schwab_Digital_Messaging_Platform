@@ -1,0 +1,11 @@
+# Copy to docker-compose.override.yml (git-ignored) and pass with an extra -f flag. Example: expose dependency ports for local debugging.
+services:
+  postgres:
+    ports: ["127.0.0.1:15432:5432"]
+  redis:
+    ports: ["127.0.0.1:16379:6379"]
+  mongo:
+    ports: ["127.0.0.1:27018:27017"]
+  backend:
+    environment:
+      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "1.0"

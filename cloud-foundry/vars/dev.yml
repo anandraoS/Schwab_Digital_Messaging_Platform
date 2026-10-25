@@ -1,0 +1,4 @@
+env: dev
+instances: 1
+memory: 1G
+apps_domain: apps.example.test

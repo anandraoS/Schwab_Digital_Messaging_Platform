@@ -1,0 +1,18 @@
+{
+  "name": "pdf-engine",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Markdown-subset to PDF renderer with vector diagrams and verification tooling",
+  "scripts": {
+    "sample": "node sample/build-sample.mjs",
+    "verify": "node verify-pdf.mjs out/sample.pdf --min-pages 12",
+    "perf": "node sample/perf.mjs",
+    "pdf1": "node pdf1/build-pdf1.mjs",
+    "pdf2": "node pdf2/build-pdf2.mjs"
+  },
+  "dependencies": {
+    "pdfjs-dist": "6.4.299",
+    "pdfkit": "0.20.2"
+  }
+}

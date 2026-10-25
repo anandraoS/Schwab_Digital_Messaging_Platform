@@ -1,0 +1,69 @@
+{
+  "rabbit_version": "3.13.7",
+  "vhosts": [
+    { "name": "messaging" }
+  ],
+  "exchanges": [
+    { "name": "messaging.dispatch", "vhost": "messaging", "type": "direct", "durable": true, "auto_delete": false, "internal": false, "arguments": {} },
+    { "name": "messaging.retry",    "vhost": "messaging", "type": "direct", "durable": true, "auto_delete": false, "internal": false, "arguments": {} },
+    { "name": "messaging.dlx",      "vhost": "messaging", "type": "direct", "durable": true, "auto_delete": false, "internal": false, "arguments": {} }
+  ],
+  "queues": [
+    {
+      "name": "messaging.dispatch.q", "vhost": "messaging", "durable": true, "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "classic",
+        "x-max-priority": 9,
+        "x-dead-letter-exchange": "messaging.dlx",
+        "x-dead-letter-routing-key": "dead"
+      }
+    },
+    {
+      "name": "messaging.dlq", "vhost": "messaging", "durable": true, "auto_delete": false,
+      "arguments": { "x-queue-type": "classic" }
+    },
+    {
+      "name": "messaging.retry.q.5s", "vhost": "messaging", "durable": true, "auto_delete": false,
+      "arguments": { "x-queue-type": "classic", "x-message-ttl": 5000, "x-dead-letter-exchange": "messaging.dispatch", "x-dead-letter-routing-key": "dispatch" }
+    },
+    {
+      "name": "messaging.retry.q.30s", "vhost": "messaging", "durable": true, "auto_delete": false,
+      "arguments": { "x-queue-type": "classic", "x-message-ttl": 30000, "x-dead-letter-exchange": "messaging.dispatch", "x-dead-letter-routing-key": "dispatch" }
+    },
+    {
+      "name": "messaging.retry.q.2m", "vhost": "messaging", "durable": true, "auto_delete": false,
+      "arguments": { "x-queue-type": "classic", "x-message-ttl": 120000, "x-dead-letter-exchange": "messaging.dispatch", "x-dead-letter-routing-key": "dispatch" }
+    },
+    {
+      "name": "messaging.retry.q.10m", "vhost": "messaging", "durable": true, "auto_delete": false,
+      "arguments": { "x-queue-type": "classic", "x-message-ttl": 600000, "x-dead-letter-exchange": "messaging.dispatch", "x-dead-letter-routing-key": "dispatch" }
+    }
+  ],
+  "bindings": [
+    { "source": "messaging.dispatch", "vhost": "messaging", "destination": "messaging.dispatch.q",  "destination_type": "queue", "routing_key": "dispatch", "arguments": {} },
+    { "source": "messaging.dlx",      "vhost": "messaging", "destination": "messaging.dlq",         "destination_type": "queue", "routing_key": "dead",     "arguments": {} },
+    { "source": "messaging.retry",    "vhost": "messaging", "destination": "messaging.retry.q.5s",  "destination_type": "queue", "routing_key": "retry.5s",  "arguments": {} },
+    { "source": "messaging.retry",    "vhost": "messaging", "destination": "messaging.retry.q.30s", "destination_type": "queue", "routing_key": "retry.30s", "arguments": {} },
+    { "source": "messaging.retry",    "vhost": "messaging", "destination": "messaging.retry.q.2m",  "destination_type": "queue", "routing_key": "retry.2m",  "arguments": {} },
+    { "source": "messaging.retry",    "vhost": "messaging", "destination": "messaging.retry.q.10m", "destination_type": "queue", "routing_key": "retry.10m", "arguments": {} }
+  ],
+  "policies": [
+    {
+      "vhost": "messaging", "name": "dispatch-backpressure", "pattern": "^messaging\\.dispatch\\.q$", "apply-to": "queues", "priority": 10,
+      "definition": { "max-length": 500000, "overflow": "reject-publish" }
+    },
+    {
+      "vhost": "messaging", "name": "dlq-retention", "pattern": "^messaging\\.dlq$", "apply-to": "queues", "priority": 10,
+      "definition": { "message-ttl": 1209600000, "max-length": 1000000 }
+    },
+    {
+      "vhost": "messaging", "name": "retry-queue-bounds", "pattern": "^messaging\\.retry\\.q\\.", "apply-to": "queues", "priority": 10,
+      "definition": { "max-length": 200000, "overflow": "reject-publish-dlx" }
+    }
+  ],
+  "users": [],
+  "permissions": [],
+  "topic_permissions": [],
+  "parameters": [],
+  "global_parameters": []
+}

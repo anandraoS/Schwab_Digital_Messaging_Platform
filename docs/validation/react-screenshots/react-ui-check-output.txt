@@ -1,0 +1,50 @@
+OK   /login  title="Sign in · Messaging Console" consoleErrors=0 apiFailures=0 banner=false
+personas offered: platform-admin, tenant-admin, sender, operator, template-author, template-approver, auditor
+OK   /dashboard  title="Dashboard · Messaging Console" consoleErrors=0 apiFailures=0 banner=false
+OK   /messages  title="Messages · Messaging Console" consoleErrors=0 apiFailures=0 banner=false
+OK   /messages/new  title="New message · Messaging Console" consoleErrors=0 apiFailures=0 banner=false
+OK   /messages/1407e814-33b9-4d78-8917-8ce377e06f22  title="Message detail · Messaging Console" consoleErrors=0 apiFailures=0 banner=false
+OK   /templates  title="Templates · Messaging Console" consoleErrors=0 apiFailures=0 banner=false
+OK   /templates/tpl-003  title="Template · Messaging Console" consoleErrors=0 apiFailures=0 banner=false
+OK   /queues  title="Queues · Messaging Console" consoleErrors=0 apiFailures=0 banner=false
+OK   /providers  title="Providers · Messaging Console" consoleErrors=0 apiFailures=0 banner=false
+OK   /bulk-jobs  title="Bulk jobs · Messaging Console" consoleErrors=0 apiFailures=0 banner=false
+OK   /dead-letters  title="Dead letters · Messaging Console" consoleErrors=0 apiFailures=0 banner=false
+OK   /failed  title="Failed messages · Messaging Console" consoleErrors=0 apiFailures=0 banner=false
+OK   /audit  title="Audit history · Messaging Console" consoleErrors=0 apiFailures=0 banner=false
+OK   /delivery-events  title="Delivery events · Messaging Console" consoleErrors=0 apiFailures=0 banner=false
+OK   /preferences  title="Preferences · Messaging Console" consoleErrors=0 apiFailures=0 banner=false
+OK   /admin  title="Admin · Messaging Console" consoleErrors=0 apiFailures=0 banner=false
+       3 /ops/queues requests in ~11.5 s
+OK   flow: queues-polling consoleErrors=0 apiFailures=0
+       Accepted (HTTP 202) Message cd82a5a9-7221-4157-acaf-d5f93bcccb8f VALIDATED on EMAIL correlationId=3425f1dd-72e1-43a0-985
+OK   flow: submit-message consoleErrors=0 apiFailures=0
+OK   flow: preferences-edit consoleErrors=0 apiFailures=0
+OK   flow: bulk-generate consoleErrors=0 apiFailures=0
+OK   flow: provider-fault-injection consoleErrors=0 apiFailures=0
+OK   /dead-letters  title="Dead letters · Messaging Console" consoleErrors=0 apiFailures=0 banner=false
+OK   flow: create-template-as-author consoleErrors=0 apiFailures=0
+OK   flow: approve-template-as-approver consoleErrors=0 apiFailures=0
+OK   /dashboard  title="Dashboard · Messaging Console" consoleErrors=0 apiFailures=0 banner=false
+OK   /messages/new  title="New message · Messaging Console" consoleErrors=0 apiFailures=0 banner=false
+OK   /bulk-jobs  title="Bulk jobs · Messaging Console" consoleErrors=0 apiFailures=0 banner=false
+OK   flow: persona-sender consoleErrors=0 apiFailures=0
+OK   /dashboard  title="Dashboard · Messaging Console" consoleErrors=0 apiFailures=0 banner=false
+OK   /queues  title="Queues · Messaging Console" consoleErrors=0 apiFailures=0 banner=false
+OK   /dead-letters  title="Dead letters · Messaging Console" consoleErrors=0 apiFailures=0 banner=false
+OK   /failed  title="Failed messages · Messaging Console" consoleErrors=0 apiFailures=0 banner=false
+OK   /providers  title="Providers · Messaging Console" consoleErrors=0 apiFailures=0 banner=false
+OK   flow: persona-operator consoleErrors=0 apiFailures=0
+OK   /dashboard  title="Dashboard · Messaging Console" consoleErrors=0 apiFailures=0 banner=false
+OK   /audit  title="Audit history · Messaging Console" consoleErrors=0 apiFailures=0 banner=false
+OK   /delivery-events  title="Delivery events · Messaging Console" consoleErrors=0 apiFailures=0 banner=false
+OK   flow: persona-auditor consoleErrors=0 apiFailures=0
+OK   /dashboard  title="Dashboard · Messaging Console" consoleErrors=0 apiFailures=0 banner=false
+OK   /templates  title="Templates · Messaging Console" consoleErrors=0 apiFailures=0 banner=false
+OK   /audit  title="Audit history · Messaging Console" consoleErrors=0 apiFailures=0 banner=false
+OK   /dead-letters  title="Dead letters · Messaging Console" consoleErrors=0 apiFailures=0 banner=false
+OK   flow: persona-tenant-admin consoleErrors=0 apiFailures=0
+OK   flow: forbidden-guard consoleErrors=0 apiFailures=0
+OK   flow: responsive-mobile consoleErrors=0 apiFailures=0
+
+React UI check finished: 45 steps, 0 with problems, 33 screenshots saved to docs/validation/react-screenshots

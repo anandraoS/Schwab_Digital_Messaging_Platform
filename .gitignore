@@ -1,0 +1,24 @@
+# build outputs
+**/target/
+**/node_modules/
+**/.angular/
+**/dist/
+.work/
+*.log
+*.pid
+.run/
+# local secrets (never commit)
+.env
+**/.env
+!.env.example
+docker-compose.override.yml
+# generated
+*.zip
+performance/node-load/results/
+performance/k6/results/
+scripts/.generated/
+tools/**/node_modules/
+# IDE
+.idea/
+.vscode/
+*.iml

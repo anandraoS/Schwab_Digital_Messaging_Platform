@@ -1,0 +1,20 @@
+# Cloud Foundry manifest (Angular static assets via staticfile_buildpack). NOT executed.
+# Build first: (frontend/messaging-console) npx ng build --configuration production
+# Push:  cf push -f cloud-foundry/manifest-frontend.yml --vars-file cloud-foundry/vars/dev.yml
+# The /api reverse proxy is done by the CF-hosted Staticfile.* nginx config in the pushed dir (see cloud-foundry-guide.md)
+# or by pointing the SPA to the backend route (CORS must then be configured on the backend).
+applications:
+  - name: messaging-frontend-((env))
+    path: ../frontend/messaging-console/dist/messaging-console/browser
+    buildpacks:
+      - staticfile_buildpack
+    instances: 1
+    memory: 64M
+    disk_quota: 128M
+    health-check-type: http
+    health-check-http-endpoint: /
+    timeout: 60
+    routes:
+      - route: messaging-ui-((env)).((apps_domain))
+    env:
+      FORCE_HTTPS: 'true'

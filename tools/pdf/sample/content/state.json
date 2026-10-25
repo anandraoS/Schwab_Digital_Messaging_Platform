@@ -1,0 +1,35 @@
+{
+  "type": "state",
+  "caption": "Message lifecycle state machine (loaded from a JSON file via diagram:state.json)",
+  "states": [
+    { "id": "ACCEPTED", "initial": true },
+    { "id": "VALIDATED" },
+    { "id": "QUEUED" },
+    { "id": "PROCESSING" },
+    { "id": "SENT_TO_PROVIDER" },
+    { "id": "DELIVERED", "kind": "ok" },
+    { "id": "RETRY_PENDING", "kind": "warn" },
+    { "id": "FAILED", "kind": "error" },
+    { "id": "DEAD_LETTERED", "kind": "error" },
+    { "id": "REJECTED", "kind": "error" },
+    { "id": "CANCELLED", "kind": "neutral" },
+    { "id": "DELIVERY_UNKNOWN", "kind": "warn" }
+  ],
+  "transitions": [
+    { "from": "ACCEPTED", "to": "VALIDATED", "label": "valid" },
+    { "from": "ACCEPTED", "to": "REJECTED", "label": "invalid" },
+    { "from": "VALIDATED", "to": "QUEUED", "label": "enqueue" },
+    { "from": "VALIDATED", "to": "CANCELLED", "label": "cancel" },
+    { "from": "QUEUED", "to": "PROCESSING", "label": "consume" },
+    { "from": "PROCESSING", "to": "SENT_TO_PROVIDER", "label": "accepted" },
+    { "from": "PROCESSING", "to": "RETRY_PENDING", "label": "transient failure" },
+    { "from": "RETRY_PENDING", "to": "QUEUED", "label": "backoff elapsed" },
+    { "from": "RETRY_PENDING", "to": "DEAD_LETTERED", "label": "exhausted" },
+    { "from": "SENT_TO_PROVIDER", "to": "DELIVERED", "label": "receipt" },
+    { "from": "SENT_TO_PROVIDER", "to": "FAILED", "label": "bounce" },
+    { "from": "SENT_TO_PROVIDER", "to": "DELIVERY_UNKNOWN", "label": "no receipt" },
+    { "from": "DELIVERY_UNKNOWN", "to": "DELIVERED", "label": "late receipt" },
+    { "from": "FAILED", "to": "DEAD_LETTERED", "label": "dead-letter" },
+    { "from": "PROCESSING", "to": "PROCESSING", "label": "heartbeat" }
+  ]
+}

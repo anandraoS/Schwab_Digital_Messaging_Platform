@@ -1,0 +1,84 @@
+# Production-like profile: PostgreSQL, RabbitMQ, Redis, MongoDB, external OIDC issuer, no dev endpoints.
+# Every connection detail and secret comes from the environment; nothing sensitive is stored in this file.
+# NOT executed in this repository's local build (no PostgreSQL/RabbitMQ/Redis/MongoDB available).
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:20}
+      connection-timeout: 5000
+  flyway:
+    locations: classpath:db/migration
+  data:
+    mongodb:
+      uri: ${MONGODB_URI}
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      ssl:
+        enabled: ${REDIS_SSL:false}
+  rabbitmq:
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+    host: ${RABBITMQ_HOST}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME}
+    password: ${RABBITMQ_PASSWORD}
+    virtual-host: ${RABBITMQ_VHOST:/}
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${OIDC_ISSUER_URI}
+
+management:
+  tracing:
+    enabled: ${TRACING_ENABLED:true}
+    sampling:
+      probability: ${TRACING_SAMPLING:0.1}
+  otlp:
+    tracing:
+      endpoint: ${OTLP_TRACES_ENDPOINT:http://otel-collector:4318/v1/traces}
+
+springdoc:
+  api-docs:
+    enabled: ${OPENAPI_ENABLED:false}
+  swagger-ui:
+    enabled: ${OPENAPI_ENABLED:false}
+
+logging:
+  structured:
+    format:
+      console: ecs
+
+messaging:
+  bus:
+    type: rabbit
+  coordination:
+    type: redis
+  security:
+    dev-token-enabled: false
+    docs-public: false
+    metrics-public: false
+  api:
+    rate-per-sec: ${API_RATE_PER_SEC:50}
+    burst: ${API_BURST:100}
+  bulk:
+    # Explicit, absolute and outside the application directory (the base default is the relative target/bulk-uploads).
+    # Uploaded CSVs hold recipient references: mount a private volume (K8s emptyDir/PVC, CF disk is ephemeral) and set
+    # BULK_UPLOAD_DIR; the fallback is a private sub-directory of the JVM temp dir.
+    upload-dir: ${BULK_UPLOAD_DIR:${java.io.tmpdir}/messaging-bulk-uploads}
+  callback:
+    secrets:
+      simulated-email-key: ${CALLBACK_SECRET_SIMULATED_EMAIL}
+      simulated-sms-key: ${CALLBACK_SECRET_SIMULATED_SMS}
+      simulated-push-key: ${CALLBACK_SECRET_SIMULATED_PUSH}
+      acme-sms-key: ${CALLBACK_SECRET_ACME_SMS}

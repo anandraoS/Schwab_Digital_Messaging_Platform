@@ -1,0 +1,46 @@
+@use '@angular/material' as mat;
+
+html {
+  @include mat.theme((
+    color: (
+      primary: mat.$azure-palette,
+      tertiary: mat.$blue-palette,
+    ),
+    typography: (plain-family: 'Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif'),
+    // density -2 (or lower) makes Material set --mat-form-field-filled-label-display: none, i.e. every form field
+    // label disappears visually; -1 keeps the compact look with visible labels.
+    density: -1,
+  ));
+}
+
+html, body { height: 100%; }
+
+body {
+  color-scheme: light;
+  background-color: var(--mat-sys-surface);
+  color: var(--mat-sys-on-surface);
+  font: var(--mat-sys-body-medium);
+  margin: 0;
+}
+
+// Shared page layout helpers
+.page { padding: 16px 24px 48px; max-width: 1400px; margin: 0 auto; }
+.page-title { font: var(--mat-sys-headline-small); margin: 8px 0 16px; }
+.toolbar-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 12px; }
+.grow { flex: 1 1 auto; }
+.card { border: 1px solid var(--mat-sys-outline-variant); border-radius: 12px; padding: 16px; background: var(--mat-sys-surface-container-lowest); }
+.grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.muted { color: var(--mat-sys-on-surface-variant); }
+.mono { font-family: Consolas, 'Courier New', monospace; font-size: 12px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+.filters mat-form-field { width: 190px; }
+table.simple { width: 100%; border-collapse: collapse; }
+table.simple th, table.simple td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--mat-sys-outline-variant); font-size: 13px; }
+table.simple th { font-weight: 600; background: var(--mat-sys-surface-container); }
+.form-grid { display: grid; gap: 4px 16px; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+:focus-visible { outline: 3px solid #1a73e8; outline-offset: 2px; }
+@media (max-width: 600px) {
+  .page { padding: 8px 8px 32px; }
+  .filters mat-form-field { width: 100%; }
+}

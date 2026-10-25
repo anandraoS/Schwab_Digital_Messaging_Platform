@@ -1,0 +1,94 @@
+# Defaults are dev-sized. All credentials are dummy placeholders.
+replicaCount: 2
+
+image:
+  repository: ghcr.io/example-org/messaging-backend
+  tag: ""            # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  port: 18080
+
+serviceAccount:
+  create: true
+  name: ""
+
+# Non-secret environment (becomes a ConfigMap)
+config:
+  SPRING_PROFILES_ACTIVE: "prod-like,rabbit"
+  SERVER_PORT: "18080"
+  SPRING_RABBITMQ_HOST: "rabbitmq"
+  SPRING_RABBITMQ_PORT: "5672"
+  SPRING_RABBITMQ_VIRTUAL_HOST: "messaging"
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/messaging"
+  SPRING_DATA_REDIS_HOST: "redis"
+  MESSAGING_BUS_TYPE: "rabbit"
+  MESSAGING_COORDINATION_TYPE: "redis"
+  MESSAGING_SECURITY_DEV_TOKEN_ENABLED: "false"
+  MANAGEMENT_OTLP_TRACING_ENDPOINT: "http://otel-collector.observability:4318/v1/traces"
+  MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.1"
+  JAVA_OPTS: "-XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError -XX:+UseG1GC -Duser.timezone=UTC"
+
+# Secrets: prefer existingSecret (managed by External Secrets / Vault). The inline block below is a DUMMY template.
+secrets:
+  existingSecret: ""
+  create: true
+  values:
+    SPRING_DATASOURCE_USERNAME: messaging_app
+    SPRING_DATASOURCE_PASSWORD: CHANGE_ME_LOCAL_ONLY
+    SPRING_RABBITMQ_USERNAME: messaging
+    SPRING_RABBITMQ_PASSWORD: CHANGE_ME_LOCAL_ONLY
+    SPRING_DATA_REDIS_PASSWORD: CHANGE_ME_LOCAL_ONLY
+    SPRING_DATA_MONGODB_URI: "mongodb://messaging_app:CHANGE_ME_LOCAL_ONLY@mongo:27017/messaging_diagnostics?authSource=messaging_diagnostics"
+    SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: "https://idp.example.test/realms/messaging"
+    MESSAGING_CALLBACK_SECRETS_LOCAL_KEY: "local-dev-secret-not-for-production"
+
+resources:
+  requests: { cpu: 500m, memory: 768Mi }
+  limits: { cpu: "2", memory: 1Gi }
+
+probes:
+  startupFailureThreshold: 36
+
+preStopSleepSeconds: 10
+terminationGracePeriodSeconds: 60
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 8
+  cpuUtilization: 70
+  # Needs prometheus-adapter / KEDA external metrics. Disabled by default.
+  queueDepth:
+    enabled: false
+    metricName: messaging_queue_depth
+    averageValue: "2000"
+
+pdb:
+  enabled: true
+  minAvailable: 1
+
+ingress:
+  enabled: true
+  className: nginx
+  host: messaging.example.test
+  tlsSecretName: messaging-tls
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "1m"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+
+networkPolicy:
+  enabled: true
+  ingressNamespace: ingress-nginx
+  monitoringNamespace: monitoring
+
+serviceMonitor:
+  enabled: false     # requires Prometheus Operator CRDs
+  interval: 15s
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []

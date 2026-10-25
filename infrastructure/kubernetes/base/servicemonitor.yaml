@@ -1,0 +1,16 @@
+# Requires the Prometheus Operator CRDs (monitoring.coreos.com/v1). kubeconform skips it unless CRD schemas are provided.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: backend
+  labels:
+    app.kubernetes.io/name: backend
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: backend
+  endpoints:
+    - port: http
+      path: /actuator/prometheus
+      interval: 15s
+      scrapeTimeout: 10s

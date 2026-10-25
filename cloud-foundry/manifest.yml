@@ -1,0 +1,33 @@
+# Cloud Foundry manifest (backend). NOT executed: no CF foundation was available.
+# Deploy:  cf push -f cloud-foundry/manifest.yml --vars-file cloud-foundry/vars/dev.yml --strategy rolling
+# Build the jar first: bash scripts/mvn.sh -f backend/pom.xml -DskipTests package
+applications:
+  - name: messaging-backend-((env))
+    path: ../backend/target/messaging-platform.jar
+    buildpacks:
+      - java_buildpack
+    instances: ((instances))
+    memory: ((memory))
+    disk_quota: 1G
+    health-check-type: http
+    health-check-http-endpoint: /actuator/health/liveness
+    health-check-invocation-timeout: 5
+    timeout: 180
+    routes:
+      - route: messaging-backend-((env)).((apps_domain))
+    env:
+      SPRING_PROFILES_ACTIVE: prod-like,rabbit,cloud
+      JBP_CONFIG_OPEN_JDK_JRE: '{ jre: { version: 21.+ } }'
+      JBP_CONFIG_SPRING_AUTO_RECONFIGURATION: '{ enabled: false }'
+      JAVA_OPTS: '-Duser.timezone=UTC -XX:+ExitOnOutOfMemoryError'
+      MESSAGING_BUS_TYPE: rabbit
+      MESSAGING_COORDINATION_TYPE: redis
+      MESSAGING_SECURITY_DEV_TOKEN_ENABLED: 'false'
+      SERVER_SHUTDOWN: graceful
+      # Secrets (JWT issuer, callback HMAC secrets) are NOT in this file: set with `cf set-env` or user-provided service.
+      # Example (dummy): cf cups messaging-secrets -p '{"callbackSecret":"CHANGE_ME_LOCAL_ONLY"}'
+    services:
+      - messaging-postgres
+      - messaging-rabbit
+      - messaging-redis
+      - messaging-mongo

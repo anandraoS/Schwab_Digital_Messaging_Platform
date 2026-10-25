@@ -1,0 +1,296 @@
+# End-to-end run output (real HTTP, executed)
+# Command: SERVER_PORT=18280 bash scripts/run-local.sh --messaging.dispatch.backoff-base-ms=300 --messaging.dispatch.backoff-cap-ms=2000 #            --messaging.dispatch.reconcile-after=3s --messaging.pipeline.scheduler.reconcile-interval-ms=2000 --messaging.bulk.chunk-size=100
+#          BASE_URL=http://localhost:18280 BACKEND_LOG=<backend console log> node tests/end-to-end/e2e.mjs
+# Target : packaged jar backend/target/messaging-platform.jar, profile local (H2, in-memory bus, in-memory Mongo, simulators), Windows 11, JDK 21
+# Note   : an earlier run of the same script found 9 failing checks, all test-side problems (a seeded suppressed recipient, a wrong audit action name,
+#          upload counter expectations, a 503 from API backpressure while a 20,000-row bulk backlog was still draining, and a 400-way parallel burst
+#          of which ~3% of TCP connects timed out (ETIMEDOUT, reproduced with an unauthenticated health probe: Windows loopback / Tomcat accept
+#          backlog, not application logic); the rate-limit check now uses 40 parallel clients); the test was corrected, not weakened, and re-run on a freshly started backend. This file is that second run.
+#
+E2E run mvdzyc2r against http://localhost:18280 at 2026-10-18T15:45:11.331Z
+
+== 1. Personas, authentication and authorization
+  PASS  dev tokens minted for all personas
+  PASS  health endpoint is UP
+  PASS  liveness probe UP
+  PASS  GET /me returns roles and tenant
+  PASS  no token -> 401 UNAUTHENTICATED
+  PASS  garbage token -> 401
+  PASS  tampered signature -> 401
+  PASS  AUDITOR cannot submit -> 403 FORBIDDEN
+  PASS  OPERATOR cannot create templates -> 403
+  PASS  SENDER cannot set fault mode -> 403
+  PASS  OPERATOR cannot pause consumers -> 403
+  PASS  SENDER cannot read audit events -> 403
+
+== 2. Submit email, sms and push; delivery receipts
+  PASS  email accepted (202)
+  PASS  202 carries Location header
+  PASS  202 carries correlation id header
+  PASS  API-Version header present
+  PASS  email reaches SENT_TO_PROVIDER (provider acceptance != delivery)
+  PASS  detail has one ACCEPTED attempt via simulated-email
+  PASS  detail masks the address and never returns body
+  PASS  detail never contains rendered content or raw address
+  PASS  detail pins template version
+  PASS  simulator emits signed DELIVERED callback (202)
+  PASS  email becomes DELIVERED
+  PASS  status endpoint: terminal=true
+  PASS  sms accepted (202)
+  PASS  sms reaches SENT_TO_PROVIDER
+  PASS  sms attempt used simulated-sms
+  PASS  push accepted (202)
+  PASS  push reaches SENT_TO_PROVIDER
+  PASS  push attempt used simulated-push
+  PASS  message list filters by channel+status with PageResponse envelope
+  PASS  list items carry channelUsed/templateCode
+  PASS  list filters by correlationId
+  PASS  page size is capped/validated (<=200)
+
+== 3. Idempotency
+  PASS  first submit 202
+  PASS  same key + same body replays original (200 + Idempotent-Replay: true)
+  PASS  same key + different body -> 422 IDEMPOTENCY_KEY_REUSED
+  PASS  same key in another tenant is independent (202)
+  PASS  missing Idempotency-Key -> 400
+  PASS  8 concurrent identical submissions yield exactly one message id
+  PASS  concurrent duplicates answered 202/200/409(in progress) only
+
+== 4. Malformed input, validation and error contract
+  PASS  malformed JSON -> 400 MALFORMED_REQUEST
+  PASS  error body has ApiError fields
+  PASS  error body does not leak stack/class names
+  PASS  unsupported channel -> 400 UNSUPPORTED_CHANNEL
+  PASS  missing fields -> 400 VALIDATION_FAILED with field details
+  PASS  unknown priority enum -> 400
+  PASS  unknown template -> 422 TEMPLATE_NOT_FOUND
+  PASS  missing template variables -> 422 TEMPLATE_VARIABLE_MISSING
+  PASS  unknown recipient -> 422 RECIPIENT_NOT_FOUND
+  PASS  body > 256 KB -> 413 PAYLOAD_TOO_LARGE
+  PASS  unknown message id -> 404 NOT_FOUND
+  PASS  HTML/template injection in variables is accepted as data (202), not evaluated
+  PASS  unsupported method -> 405 with ApiError
+  PASS  unknown path -> 404
+  PASS  X-Correlation-Id is echoed
+
+== 5. Tenant isolation and platform-admin scoping
+  PASS  other tenant gets 404 (not 403) for a message
+  PASS  other tenant cannot cancel -> 404
+  PASS  other tenant list never contains retail messages
+  PASS  other tenant cannot read history -> 404
+  PASS  sending to another tenant's recipient -> 422 RECIPIENT_NOT_FOUND
+  PASS  X-Tenant-Id from a non-admin is ignored (still 404)
+  PASS  platform admin reads across tenants
+  PASS  platform admin write without X-Tenant-Id -> 400
+  PASS  platform admin write with X-Tenant-Id -> 202
+  PASS  platform admin with unknown tenant -> 400
+
+== 6. Consent, suppression and quiet hours
+  PASS  opted-out recipient: marketing accepted as REJECTED (202)
+  PASS  rejection reason is OPTED_OUT and message is terminal
+  PASS  no provider attempt for the rejected message
+  PASS  transactional to the same recipient ignores marketing opt-out
+  PASS  recipient without push token: REJECTED (no address)
+  PASS  operator adds a suppression
+  PASS  suppressed address blocks even transactional email (REJECTED)
+  PASS  operator removes the suppression
+  PASS  after removal the same recipient is deliverable
+  PASS  preferences readable
+  PASS  quiet-hours window set around now
+  PASS  stale preference write -> 409 CONFLICT_OPTIMISTIC_LOCK
+  PASS  marketing inside quiet hours is deferred (VALIDATED with future scheduledAt)
+  PASS  deferred message is not dispatched yet (no attempts)
+  PASS  security alert ignores quiet hours (dispatched)
+  PASS  deferred message can be cancelled
+  PASS  quiet hours restored
+
+== 7. Template lifecycle: create -> submit -> approve (four-eyes) -> publish -> use -> new version
+  PASS  author creates template (201/200) with a DRAFT version
+  PASS  duplicate code+channel -> 409
+  PASS  a DRAFT template cannot be used for sending (422 TEMPLATE_NOT_FOUND)
+  PASS  preview renders and HTML-escapes sample data
+  PASS  preview reports undeclared variables as invalid
+  PASS  author submits for approval
+  PASS  author cannot approve own version -> 403
+  PASS  TENANT_ADMIN is not an approver -> 403
+  PASS  PENDING_APPROVAL version cannot be edited -> 409
+  PASS  different approver publishes v1
+  PASS  v1 is PUBLISHED
+  PASS  published template can be used
+  PASS  scheduled message accepted (not yet dispatched)
+  PASS  message pinned to version 1 at accept time
+  PASS  author creates a new DRAFT version (v2)
+  PASS  v2 submit
+  PASS  approver rejects with comment (back to DRAFT)
+  PASS  v2 resubmit
+  PASS  approver publishes v2
+  PASS  v1 RETIRED and v2 PUBLISHED
+  PASS  the already accepted message keeps version 1
+  PASS  the scheduled (not yet sent) message keeps version 1
+  PASS  a new message pins version 2
+  PASS  cancel the scheduled message
+  PASS  template change history is available
+  PASS  template list filter by code
+  PASS  other tenant cannot see the template -> 404
+
+== 8. Simulator fault modes: retry, permanent failure, timeout, ambiguous, rate limit, outage -> DLQ -> replay
+  PASS  transient failure -> RETRY_PENDING
+  PASS  failed attempt recorded with TRANSIENT_FAILURE and nextAttemptAt set
+  PASS  after the fault clears the retry is sent (SENT_TO_PROVIDER)
+  PASS  retried message becomes DELIVERED
+  PASS  attempt count > 1 and a later attempt ACCEPTED
+  PASS  permanent failure -> FAILED
+  PASS  exactly one attempt for a permanent failure (no retry)
+  PASS  FAILED message appears in the failed-messages investigation list
+  PASS  operator requeue of a FAILED message
+  PASS  requeued message reaches the provider
+  PASS  SENDER cannot requeue -> 403
+  PASS  provider timeout -> DELIVERY_UNKNOWN (not blindly retried)
+  PASS  exactly one attempt while unknown
+  PASS  reconciliation finds NOT_RECEIVED and safely re-sends
+  PASS  RECONCILIATION_CHECK is audited
+  PASS  ambiguous provider answer -> DELIVERY_UNKNOWN
+  PASS  reconciliation sees the provider accepted it: no duplicate send, still DELIVERY_UNKNOWN
+  PASS  late DELIVERED callback accepted
+  PASS  DELIVERY_UNKNOWN -> DELIVERED by the late callback
+  PASS  provider rate limit (429) -> RETRY_PENDING
+  PASS  attempt recorded as RATE_LIMITED
+  PASS  rate-limited message eventually sent
+  PASS  platform admin lowers simulated-sms rate limit
+  PASS  6 SMS through a 2/s limiter all dispatched (none lost)
+  PASS  outage: retries exhausted -> DEAD_LETTERED
+  PASS  dead-lettered after max attempts (5)
+  PASS  dead-letter list shows RETRIES_EXHAUSTED
+  PASS  provider health reflects the outage (failures, lastError)
+  PASS  SENDER cannot replay dead letters -> 403
+  PASS  operator replays the dead letter
+  PASS  replayed message is sent after the outage ends (circuit recovers)
+  PASS  replaying a message that is no longer dead-lettered -> 409
+
+== 9. Signed provider callbacks: valid, bad signature, replay, duplicate, out-of-order
+  PASS  callback target reaches SENT_TO_PROVIDER
+  PASS  valid SENT callback accepted (202 accepted)
+  PASS  wrong secret -> 401 INVALID_SIGNATURE
+  PASS  timestamp outside the 5 minute tolerance -> 401
+  PASS  key id not bound to the provider -> 401
+  PASS  unknown provider -> 401 (same answer as a bad signature)
+  PASS  callback without signature headers -> 401
+  PASS  rejected callbacks changed nothing (still SENT_TO_PROVIDER)
+  PASS  same X-Event-Id again -> 200 replayed
+  PASS  same provider event id under another header id -> duplicate (no second row)
+  PASS  signed but malformed payload -> 400
+  PASS  event for an unknown message -> 202 unknown_message
+  PASS  DELIVERED callback accepted
+  PASS  message DELIVERED
+  PASS  late SENT after DELIVERED is out_of_order and ignored
+  PASS  BOUNCED after DELIVERED is a conflict; first terminal state wins
+  PASS  status is still DELIVERED
+  PASS  delivery events: applied DELIVERED and ignored OUT_OF_ORDER SENT recorded
+  PASS  delivery events are tenant scoped (other tenant sees none)
+  PASS  provider diagnostics available to operator (Mongo archive)
+  PASS  diagnostics forbidden for SENDER
+
+== 10. Cancel, history timeline, audit
+  PASS  scheduled message accepted
+  PASS  cancel a scheduled message -> 200 CANCELLED
+  PASS  cancel again -> 409 ILLEGAL_STATE_TRANSITION
+  PASS  a CANCELLED message cannot be requeued -> 409
+  PASS  cancel after delivery -> 409
+  PASS  history is a time-ordered merge of AUDIT, ATTEMPT and DELIVERY_EVENT entries
+  PASS  history entries follow TimelineEntry {at,kind,type,summary,detail}
+  PASS  audit entries carry the actor in detail.actor
+  PASS  history never leaks content or raw addresses
+  PASS  auditor reads audit events of the message
+  PASS  audit contains MESSAGE_ACCEPTED
+  PASS  audit is tenant scoped (other tenant: 403 or empty)
+  PASS  audit filter by action (template approval audited)
+  PASS  audit trail is append-only through the API (no POST)
+
+== 11. Bulk jobs: generate-synthetic, progress, failures, upload, authorization, stop/restart
+  PASS  bulk without scope messages:bulk -> 403
+  PASS  AUDITOR cannot start bulk -> 403
+  PASS  rows=0 -> 400
+  PASS  synthetic 500-row job accepted (202) with Location
+  PASS  job finished COMPLETED_WITH_ERRORS (invalid + duplicate rows)
+  PASS  total counts the rows
+  PASS  processed = succeeded + failed + duplicate
+  PASS  some rows failed and some were duplicates
+  PASS  most rows succeeded
+  PASS  failures endpoint lists rejected rows with line numbers and hashes only
+  PASS  failure reasons include DUPLICATE_EXTERNAL_REF and a validation/recipient reason
+  PASS  job list readable by tenant admin, newest first
+  PASS  other tenant cannot see the job -> 404
+  PASS  bulk messages flow through the same pipeline (list works)
+  PASS  stop on a finished job -> 409
+  PASS  CSV upload accepted (202)
+  PASS  upload: counters add up (43 rows = succeeded + failed + 1 duplicate), bad rows rejected
+  PASS  upload failures name RECIPIENT_NOT_FOUND, a malformed row and the duplicate
+  PASS  upload without file -> 400
+  PASS  upload with invalid CSV header -> 400
+  PASS  large synthetic job accepted
+  PASS  running job stopped between chunks (partial progress kept)
+  PASS  restart accepted
+  PASS  restarted job completes all rows exactly once (succeeded = 20000, no duplicates)
+  PASS  stop without scope messages:bulk -> 403
+
+== 11b. Let the bulk backlog drain (API backpressure would otherwise answer 503 to new submissions)
+  PASS  pipeline drained (no VALIDATED/QUEUED/PROCESSING/RETRY_PENDING left)
+
+== 12. Ops, providers, metrics, log hygiene
+  PASS  queues: depth per priority, in-flight, consumers, DLQ, retry-pending, oldest age, paused flags
+  PASS  SENDER cannot read queue stats -> 403
+  PASS  summary: byStatus, byChannel, total, successRate, p95 dispatch delay
+  PASS  summary total equals sum(byStatus)
+  PASS  summary is tenant scoped (wealth total < global total)
+  PASS  platform admin pauses consumers
+  PASS  submission while consumers are paused is still accepted (202)
+  PASS  while paused a new message is queued but not processed
+  PASS  queue stats report consumersPaused=true and a positive depth
+  PASS  platform admin resumes consumers
+  PASS  queued message is processed after resume
+  PASS  provider health lists the four providers with circuit state, rate limit, fault mode
+  PASS  TENANT_ADMIN cannot change provider config -> 403
+  PASS  invalid fault mode -> 400
+  PASS  fault mode on unknown provider -> 404
+  PASS  prometheus endpoint served
+  PASS  meter present: messaging_messages_accepted_total
+  PASS  meter present: messaging_transitions_total
+  PASS  meter present: messaging_provider_calls_total
+  PASS  meter present: messaging_provider_latency_seconds
+  PASS  meter present: messaging_dispatch_delay_seconds
+  PASS  meter present: messaging_queue_depth
+  PASS  meter present: messaging_queue_inflight
+  PASS  meter present: messaging_queue_dlq_depth
+  PASS  meter present: messaging_retry_scheduled_total
+  PASS  meter present: messaging_deadletter_total
+  PASS  meter present: messaging_callbacks_total
+  PASS  meter present: messaging_idempotency_hits_total
+  PASS  meter present: messaging_provider_circuit_state
+  PASS  meter present: messaging_bulk_progress
+  PASS  meter present: http_server_requests_seconds
+  PASS  meter present: hikaricp_connections
+  PASS  meter present: jvm_memory_used_bytes
+  PASS  callback results counted by result tag
+  PASS  no PII/tenant data in metric labels (no addresses or message ids)
+  PASS  actuator exposure limited (env/heap dump not exposed)
+  PASS  OpenAPI served (local profile) and lists the bulk-jobs and callbacks paths
+
+== 13. API rate limit (token bucket per client)
+  PASS  no connection errors under 40 parallel clients
+  PASS  burst of 400 parallel requests triggers 429 RATE_LIMITED
+  PASS  429 carries Retry-After
+  PASS  requests before the limit were served (200)
+  PASS  another client is unaffected
+
+== 14. Backend log redaction spot check
+  PASS  log is non-empty (dispatch activity logged)
+  PASS  no raw email addresses in the log
+  PASS  no phone numbers in the log
+  PASS  no push tokens in the log
+  PASS  no JWT / bearer tokens in the log
+  PASS  no template variable values or rendered content in the log
+  PASS  callback HMAC secret never logged
+  PASS  no stack traces for handled client errors (no "at com.example" frames from 4xx)
+  PASS  correlation id MDC present in log lines
+
+==== RESULT: 254 passed, 0 failed, 0 skipped in 267.9 s

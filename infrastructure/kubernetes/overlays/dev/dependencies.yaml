@@ -1,0 +1,150 @@
+# DEV-ONLY dependency examples (single replica, small PVCs, dummy credentials). Not for production: use managed services or operators.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: dev-dependencies-secret
+type: Opaque
+stringData:
+  POSTGRES_PASSWORD: CHANGE_ME_LOCAL_ONLY
+  RABBITMQ_DEFAULT_USER: messaging
+  RABBITMQ_DEFAULT_PASS: CHANGE_ME_LOCAL_ONLY
+  REDIS_PASSWORD: CHANGE_ME_LOCAL_ONLY
+  MONGO_INITDB_ROOT_USERNAME: mongoadmin
+  MONGO_INITDB_ROOT_PASSWORD: CHANGE_ME_LOCAL_ONLY
+---
+apiVersion: v1
+kind: Service
+metadata: { name: postgres, labels: { app.kubernetes.io/component: dependency } }
+spec:
+  clusterIP: None
+  selector: { app.kubernetes.io/name: postgres }
+  ports: [{ name: pg, port: 5432 }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: postgres }
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/name: postgres } }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: postgres, app.kubernetes.io/component: dependency }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 70, fsGroup: 70, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: postgres
+          image: postgres:16.4-alpine
+          env:
+            - { name: POSTGRES_DB, value: messaging }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: dev-dependencies-secret, key: POSTGRES_PASSWORD } }
+          ports: [{ containerPort: 5432 }]
+          readinessProbe: { exec: { command: ["pg_isready", "-U", "postgres"] }, periodSeconds: 10 }
+          resources: { requests: { cpu: 100m, memory: 256Mi }, limits: { memory: 512Mi } }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+          volumeMounts: [{ name: data, mountPath: /var/lib/postgresql/data }]
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec: { accessModes: [ReadWriteOnce], resources: { requests: { storage: 2Gi } } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: rabbitmq, labels: { app.kubernetes.io/component: dependency } }
+spec:
+  clusterIP: None
+  selector: { app.kubernetes.io/name: rabbitmq }
+  ports: [{ name: amqp, port: 5672 }, { name: mgmt, port: 15672 }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: rabbitmq }
+spec:
+  serviceName: rabbitmq
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/name: rabbitmq } }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: rabbitmq, app.kubernetes.io/component: dependency }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 100, fsGroup: 101, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: rabbitmq
+          image: rabbitmq:3.13.7-management-alpine
+          envFrom: [{ secretRef: { name: dev-dependencies-secret } }]
+          env: [{ name: RABBITMQ_DEFAULT_VHOST, value: messaging }]
+          ports: [{ containerPort: 5672 }, { containerPort: 15672 }]
+          readinessProbe: { exec: { command: ["rabbitmq-diagnostics", "-q", "ping"] }, periodSeconds: 15, initialDelaySeconds: 20 }
+          resources: { requests: { cpu: 100m, memory: 256Mi }, limits: { memory: 768Mi } }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+          volumeMounts: [{ name: data, mountPath: /var/lib/rabbitmq }]
+      # Topology: import infrastructure/rabbitmq/definitions.json via the management API or mount it with a ConfigMap.
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec: { accessModes: [ReadWriteOnce], resources: { requests: { storage: 1Gi } } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: redis, labels: { app.kubernetes.io/component: dependency } }
+spec:
+  clusterIP: None
+  selector: { app.kubernetes.io/name: redis }
+  ports: [{ name: redis, port: 6379 }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: redis }
+spec:
+  serviceName: redis
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/name: redis } }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: redis, app.kubernetes.io/component: dependency }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 999, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: redis
+          image: redis:7.4.1-alpine
+          command: ["sh", "-c", "exec redis-server --requirepass \"$REDIS_PASSWORD\" --maxmemory 128mb --maxmemory-policy allkeys-lru --appendonly no"]
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom: { secretKeyRef: { name: dev-dependencies-secret, key: REDIS_PASSWORD } }
+          ports: [{ containerPort: 6379 }]
+          readinessProbe: { tcpSocket: { port: 6379 }, periodSeconds: 10 }
+          resources: { requests: { cpu: 50m, memory: 64Mi }, limits: { memory: 192Mi } }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: mongo, labels: { app.kubernetes.io/component: dependency } }
+spec:
+  clusterIP: None
+  selector: { app.kubernetes.io/name: mongo }
+  ports: [{ name: mongo, port: 27017 }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: mongo }
+spec:
+  serviceName: mongo
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/name: mongo } }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: mongo, app.kubernetes.io/component: dependency }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 999, fsGroup: 999, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: mongo
+          image: mongo:7.0.14
+          envFrom: [{ secretRef: { name: dev-dependencies-secret } }]
+          ports: [{ containerPort: 27017 }]
+          readinessProbe: { tcpSocket: { port: 27017 }, periodSeconds: 10, initialDelaySeconds: 15 }
+          resources: { requests: { cpu: 100m, memory: 256Mi }, limits: { memory: 512Mi } }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+          volumeMounts: [{ name: data, mountPath: /data/db }]
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec: { accessModes: [ReadWriteOnce], resources: { requests: { storage: 1Gi } } }

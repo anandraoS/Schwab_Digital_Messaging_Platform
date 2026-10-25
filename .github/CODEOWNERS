@@ -1,0 +1,39 @@
+# CODEOWNERS (example). Team handles are placeholders for a real organization; replace before use.
+# Later matching patterns take precedence.
+
+*                                         @example-org/platform-engineering
+
+# Security-sensitive areas require security review (independent reviewer)
+/backend/src/main/java/com/example/messaging/security/    @example-org/security-reviewers @example-org/platform-engineering
+/backend/src/main/java/com/example/messaging/callback/    @example-org/security-reviewers @example-org/platform-engineering
+/backend/src/main/java/com/example/messaging/template/    @example-org/security-reviewers @example-org/platform-engineering
+/backend/src/main/java/com/example/messaging/config/SecurityConfig.java  @example-org/security-reviewers
+/docs/security/                           @example-org/security-reviewers
+
+# Lifecycle, retry and consent core: architecture review
+/backend/src/main/java/com/example/messaging/domain/      @example-org/architecture-reviewers
+/backend/src/main/java/com/example/messaging/service/     @example-org/architecture-reviewers @example-org/platform-engineering
+/backend/src/main/java/com/example/messaging/messaging/   @example-org/architecture-reviewers
+/docs/adr/                                @example-org/architecture-reviewers
+/docs/design/CONTRACT.md                  @example-org/architecture-reviewers
+
+# Database
+/backend/src/main/resources/db/           @example-org/data-reviewers @example-org/platform-engineering
+/docs/database/                           @example-org/data-reviewers
+
+# Frontend
+/frontend/                                @example-org/frontend-engineering
+
+# Operations and delivery
+/docs/operations/                         @example-org/sre
+/infrastructure/                          @example-org/sre
+/cloud-foundry/                           @example-org/sre
+/observability/                           @example-org/sre
+/.github/workflows/                       @example-org/sre @example-org/security-reviewers
+
+# AI engineering configuration
+/ai-engineering/                          @example-org/architecture-reviewers
+/AGENTS.md                                @example-org/architecture-reviewers
+/.github/copilot-instructions.md          @example-org/architecture-reviewers
+/.github/instructions/                    @example-org/architecture-reviewers
+/.github/prompts/                         @example-org/architecture-reviewers

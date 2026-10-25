@@ -1,0 +1,1800 @@
+openapi: 3.0.3
+info:
+  title: Omnichannel Messaging and Notification Orchestration API
+  version: 1.0.0
+  description: |
+    Synthetic-data reference platform. Providers are simulators: no real email, SMS or push is ever sent.
+
+    Conventions
+    * Base path `/api/v1`, JSON only. Errors always use the `ApiError` payload.
+    * Authentication: `Authorization: Bearer <JWT>` (RS256). Claims: `sub`, `roles` (array), `tenant`, `scope`.
+    * Tenant isolation: non-admin principals only see their own tenant; resources of another tenant answer 404.
+      `PLATFORM_ADMIN` (tenant `*`) may scope with `X-Tenant-Id`.
+    * `POST /messages` requires `Idempotency-Key`; replays answer 200 with `Idempotent-Replay: true`.
+    * Delivery is asynchronous: 202 means *accepted for processing*, never *delivered*.
+    * Every response carries `X-Correlation-Id` and `API-Version: 1`; rate limited requests carry `X-RateLimit-*`.
+    * Paths marked "stage 2" (providers, ops, bulk jobs, callbacks, diagnostics, simulator) are part of the same
+      contract and are implemented by the messaging/providers/callbacks/batch modules.
+servers:
+  - url: http://localhost:18080
+    description: Local development (profile local)
+tags:
+  - name: Messages
+  - name: Operations
+  - name: Templates
+  - name: Recipients
+  - name: Audit and events
+  - name: Providers
+  - name: Queues
+  - name: Bulk jobs
+  - name: Diagnostics
+  - name: Callbacks
+  - name: Identity
+  - name: Development
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/messages:
+    post:
+      tags: [Messages]
+      operationId: submitMessage
+      summary: Submit a message for asynchronous delivery (idempotent)
+      description: Roles SENDER, TENANT_ADMIN, PLATFORM_ADMIN. Policy rejections (opt-out, suppression, deleted recipient) are recorded as REJECTED messages with `statusReason`.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/TenantHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitMessageRequest'
+            examples:
+              tradeConfirmation:
+                summary: Transactional email with SMS fallback
+                value:
+                  clientReference: order-8841-confirm
+                  recipientId: rcp-001
+                  channel: EMAIL
+                  category: TRANSACTIONAL
+                  priority: NORMAL
+                  template: {code: TRADE_CONFIRMATION, locale: en-US, version: null}
+                  variables: {accountLast4: '1234', quantity: '10', symbol: ACME, price: '250.00'}
+                  fallbackChannels: [SMS]
+                  schedule: {sendAt: '2026-11-01T14:00:00Z', expiresAt: '2026-11-02T14:00:00Z'}
+                  metadata: {source: brokerage-web}
+      responses:
+        '202':
+          description: Accepted for processing
+          headers:
+            Location: {schema: {type: string}, description: URL of the new message}
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageAcceptedResponse'
+              example:
+                id: 6f1c2f64-2f0e-4c7e-9a52-0a5d1a3b9c11
+                status: VALIDATED
+                channel: EMAIL
+                correlationId: 0b8f4a0e-6a77-4a5e-8d52-c3a1f7b2d9aa
+                scheduledAt: null
+                statusReason: null
+                links: {self: /api/v1/messages/6f1c2f64-2f0e-4c7e-9a52-0a5d1a3b9c11}
+        '200':
+          description: Idempotent replay of an earlier identical request
+          headers:
+            Idempotent-Replay: {schema: {type: string, enum: ['true']}}
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageAcceptedResponse'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+    get:
+      tags: [Messages]
+      operationId: listMessages
+      summary: Search messages (filters, pagination, sorting)
+      parameters:
+        - {name: status, in: query, schema: {$ref: '#/components/schemas/MessageStatus'}}
+        - {name: channel, in: query, schema: {$ref: '#/components/schemas/Channel'}}
+        - {name: category, in: query, schema: {$ref: '#/components/schemas/Category'}}
+        - {name: priority, in: query, schema: {$ref: '#/components/schemas/Priority'}}
+        - {name: recipientId, in: query, schema: {type: string}}
+        - {name: correlationId, in: query, schema: {type: string}}
+        - {name: from, in: query, schema: {type: string, format: date-time}, description: createdAt >= from}
+        - {name: to, in: query, schema: {type: string, format: date-time}, description: createdAt < to}
+        - {name: q, in: query, schema: {type: string}, description: Case-insensitive contains match on clientReference}
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - {name: sort, in: query, schema: {type: string, example: 'createdAt,desc'}, description: 'One of createdAt, updatedAt, status, priority, channel, scheduledAt, category'}
+        - $ref: '#/components/parameters/TenantHeader'
+      responses:
+        '200':
+          description: A page of messages
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessagePage'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /api/v1/messages/{id}:
+    get:
+      tags: [Messages]
+      operationId: getMessage
+      summary: Message detail with attempts and delivery events (never content, masked address)
+      parameters:
+        - $ref: '#/components/parameters/MessageId'
+      responses:
+        '200':
+          description: Message detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageDetail'
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/messages/{id}/status:
+    get:
+      tags: [Messages]
+      operationId: getMessageStatus
+      summary: Lightweight status
+      parameters:
+        - $ref: '#/components/parameters/MessageId'
+      responses:
+        '200':
+          description: Status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageStatusResponse'
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/messages/{id}/history:
+    get:
+      tags: [Messages]
+      operationId: getMessageHistory
+      summary: Lifecycle timeline (audit events, attempts and delivery events merged by time)
+      parameters:
+        - $ref: '#/components/parameters/MessageId'
+      responses:
+        '200':
+          description: Timeline
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TimelineEntry'
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/messages/{id}/cancel:
+    post:
+      tags: [Messages]
+      operationId: cancelMessage
+      summary: Cancel a message that was not yet handed to a provider
+      description: Allowed from VALIDATED, QUEUED, RETRY_PENDING. Roles SENDER, TENANT_ADMIN, OPERATOR, PLATFORM_ADMIN.
+      parameters:
+        - $ref: '#/components/parameters/MessageId'
+      responses:
+        '200':
+          description: Cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageStatusResponse'
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /api/v1/messages/{id}/requeue:
+    post:
+      tags: [Messages]
+      operationId: requeueMessage
+      summary: Operator requeue of a FAILED or DEAD_LETTERED message
+      parameters:
+        - $ref: '#/components/parameters/MessageId'
+      responses:
+        '200':
+          description: Requeued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageStatusResponse'
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /api/v1/dead-letters:
+    get:
+      tags: [Operations]
+      operationId: listDeadLetters
+      summary: Dead-lettered messages with the reason
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - {name: sort, in: query, schema: {type: string}}
+      responses:
+        '200':
+          description: A page of dead letters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeadLetterPage'
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /api/v1/dead-letters/{messageId}/replay:
+    post:
+      tags: [Operations]
+      operationId: replayDeadLetter
+      summary: Operator replay of a dead letter (DEAD_LETTERED to QUEUED)
+      parameters:
+        - {name: messageId, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: Replayed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageStatusResponse'
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /api/v1/dead-letters/{messageId}/discard:
+    post:
+      tags: [Operations]
+      operationId: discardDeadLetter
+      summary: Mark a dead letter as discarded (audited; status stays DEAD_LETTERED)
+      parameters:
+        - {name: messageId, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DiscardRequest'
+      responses:
+        '200':
+          description: Discarded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageStatusResponse'
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /api/v1/failed-messages:
+    get:
+      tags: [Operations]
+      operationId: listFailedMessages
+      summary: Investigation list of FAILED, DELIVERY_UNKNOWN and RETRY_PENDING messages
+      parameters:
+        - {name: status, in: query, schema: {$ref: '#/components/schemas/MessageStatus'}}
+        - {name: channel, in: query, schema: {$ref: '#/components/schemas/Channel'}}
+        - {name: category, in: query, schema: {$ref: '#/components/schemas/Category'}}
+        - {name: priority, in: query, schema: {$ref: '#/components/schemas/Priority'}}
+        - {name: from, in: query, schema: {type: string, format: date-time}}
+        - {name: to, in: query, schema: {type: string, format: date-time}}
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - {name: sort, in: query, schema: {type: string}}
+      responses:
+        '200':
+          description: A page of messages
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessagePage'
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /api/v1/delivery-events:
+    get:
+      tags: [Audit and events]
+      operationId: searchDeliveryEvents
+      summary: Search normalised provider delivery events
+      parameters:
+        - {name: messageId, in: query, schema: {type: string}}
+        - {name: providerId, in: query, schema: {type: string}}
+        - {name: type, in: query, schema: {$ref: '#/components/schemas/DeliveryEventType'}}
+        - {name: from, in: query, schema: {type: string, format: date-time}}
+        - {name: to, in: query, schema: {type: string, format: date-time}}
+        - {name: applied, in: query, schema: {type: boolean}}
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - {name: sort, in: query, schema: {type: string}}
+      responses:
+        '200':
+          description: A page of events
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliveryEventPage'
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /api/v1/audit-events:
+    get:
+      tags: [Audit and events]
+      operationId: searchAuditEvents
+      summary: Search the append-only audit trail
+      parameters:
+        - {name: entityType, in: query, schema: {type: string, example: MESSAGE}}
+        - {name: entityId, in: query, schema: {type: string}}
+        - {name: action, in: query, schema: {type: string}}
+        - {name: actor, in: query, schema: {type: string}}
+        - {name: from, in: query, schema: {type: string, format: date-time}}
+        - {name: to, in: query, schema: {type: string, format: date-time}}
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - {name: sort, in: query, schema: {type: string}}
+      responses:
+        '200':
+          description: A page of audit events
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditEventPage'
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /api/v1/templates:
+    get:
+      tags: [Templates]
+      operationId: listTemplates
+      summary: List templates with version summaries
+      parameters:
+        - {name: channel, in: query, schema: {$ref: '#/components/schemas/Channel'}}
+        - {name: status, in: query, schema: {$ref: '#/components/schemas/TemplateStatus'}, description: Templates having a version in this status}
+        - {name: code, in: query, schema: {type: string}, description: Case-insensitive contains}
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - {name: sort, in: query, schema: {type: string}}
+      responses:
+        '200':
+          description: A page of templates
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplatePage'
+    post:
+      tags: [Templates]
+      operationId: createTemplate
+      summary: Create a template with its first DRAFT version
+      description: Roles TEMPLATE_AUTHOR, TENANT_ADMIN.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTemplateRequest'
+            example:
+              code: PASSWORD_RESET
+              name: Password reset
+              channel: EMAIL
+              category: SECURITY_ALERT
+              locale: en
+              subject: Reset your password
+              body: '<p>Use code {{code}} to reset your password. It expires in {{minutes|15}} minutes.</p>'
+              variables: [code, minutes]
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateDetail'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+  /api/v1/templates/preview:
+    post:
+      tags: [Templates]
+      operationId: previewTemplate
+      summary: Render a template with sample data (nothing is sent or stored)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PreviewRequest'
+      responses:
+        '200':
+          description: Rendered output, or validation problems with `valid=false`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreviewResponse'
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /api/v1/templates/{id}:
+    get:
+      tags: [Templates]
+      operationId: getTemplate
+      summary: Template with all versions
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+      responses:
+        '200':
+          description: Template detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateDetail'
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/templates/{id}/versions:
+    post:
+      tags: [Templates]
+      operationId: createTemplateVersion
+      summary: New DRAFT version or locale variant
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateVersionRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateVersion'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+  /api/v1/templates/{id}/versions/{versionNo}:
+    put:
+      tags: [Templates]
+      operationId: editTemplateVersion
+      summary: Edit a DRAFT version (optimistic lock)
+      description: '`version` in the body is the optimistic-lock token; an optional `If-Match` header must agree with it. The editor becomes the author of record.'
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+        - $ref: '#/components/parameters/VersionNo'
+        - $ref: '#/components/parameters/Locale'
+        - {name: If-Match, in: header, required: false, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateVersionRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateVersion'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+  /api/v1/templates/{id}/versions/{versionNo}/submit:
+    post:
+      tags: [Templates]
+      operationId: submitTemplateVersion
+      summary: DRAFT to PENDING_APPROVAL
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+        - $ref: '#/components/parameters/VersionNo'
+        - $ref: '#/components/parameters/Locale'
+      responses:
+        '200':
+          description: Submitted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateVersion'
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /api/v1/templates/{id}/versions/{versionNo}/approve:
+    post:
+      tags: [Templates]
+      operationId: approveTemplateVersion
+      summary: PENDING_APPROVAL to PUBLISHED (four-eyes)
+      description: The approver must differ from the author of record (403 otherwise). The previously published version of the same locale becomes RETIRED.
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+        - $ref: '#/components/parameters/VersionNo'
+        - $ref: '#/components/parameters/Locale'
+      responses:
+        '200':
+          description: Published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateVersion'
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /api/v1/templates/{id}/versions/{versionNo}/reject:
+    post:
+      tags: [Templates]
+      operationId: rejectTemplateVersion
+      summary: PENDING_APPROVAL back to DRAFT with a comment
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+        - $ref: '#/components/parameters/VersionNo'
+        - $ref: '#/components/parameters/Locale'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RejectRequest'
+      responses:
+        '200':
+          description: Rejected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateVersion'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /api/v1/templates/{id}/versions/{versionNo}/retire:
+    post:
+      tags: [Templates]
+      operationId: retireTemplateVersion
+      summary: PUBLISHED to RETIRED
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+        - $ref: '#/components/parameters/VersionNo'
+        - $ref: '#/components/parameters/Locale'
+      responses:
+        '200':
+          description: Retired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateVersion'
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /api/v1/templates/{id}/history:
+    get:
+      tags: [Templates]
+      operationId: getTemplateHistory
+      summary: Change history from the audit trail
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+      responses:
+        '200':
+          description: Audit entries in time order
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AuditEvent'
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/recipients:
+    get:
+      tags: [Recipients]
+      operationId: searchRecipients
+      summary: Search recipients (addresses are masked)
+      parameters:
+        - {name: q, in: query, schema: {type: string}, description: Contains match on externalRef, displayName or id}
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - {name: sort, in: query, schema: {type: string}}
+      responses:
+        '200':
+          description: A page of recipients
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecipientPage'
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /api/v1/recipients/{id}/preferences:
+    get:
+      tags: [Recipients]
+      operationId: getPreferences
+      summary: Consent and delivery preferences
+      parameters:
+        - $ref: '#/components/parameters/RecipientId'
+      responses:
+        '200':
+          description: Preferences with the optimistic-lock `version`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreferencesResponse'
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    put:
+      tags: [Recipients]
+      operationId: updatePreferences
+      summary: Update preferences (stale `version` yields 409 CONFLICT_OPTIMISTIC_LOCK)
+      parameters:
+        - $ref: '#/components/parameters/RecipientId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePreferencesRequest'
+            example:
+              marketingOptIn: true
+              emailEnabled: true
+              smsEnabled: true
+              pushEnabled: false
+              quietStart: '22:00'
+              quietEnd: '07:00'
+              timeZone: America/New_York
+              fallbackOrder: [SMS, EMAIL]
+              version: 3
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreferencesResponse'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /api/v1/recipients/{id}/suppressions:
+    post:
+      tags: [Recipients]
+      operationId: addSuppression
+      summary: Suppress the recipient's address on one channel (blocks all categories)
+      parameters:
+        - $ref: '#/components/parameters/RecipientId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SuppressionRequest'
+      responses:
+        '201':
+          description: Suppressed (idempotent)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuppressionResponse'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/recipients/{id}/suppressions/{channel}:
+    delete:
+      tags: [Recipients]
+      operationId: removeSuppression
+      summary: Lift a suppression
+      parameters:
+        - $ref: '#/components/parameters/RecipientId'
+        - {name: channel, in: path, required: true, schema: {$ref: '#/components/schemas/Channel'}}
+      responses:
+        '204': {description: Removed}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/providers:
+    get:
+      tags: [Providers]
+      operationId: listProviders
+      summary: Provider health
+      description: Roles OPERATOR, TENANT_ADMIN, PLATFORM_ADMIN. Circuit state comes from the per-provider circuit breaker, success rate and p95 latency from the `messaging.provider.*` meters (since process start / sliding window), `lastError` is the last non-accepted outcome as `OUTCOME:CODE`.
+      responses:
+        '200':
+          description: Providers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProviderHealth'
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /api/v1/providers/{providerId}/config:
+    put:
+      tags: [Providers]
+      operationId: updateProviderConfig
+      summary: Enable/disable a provider, change rate limit and timeout (PLATFORM_ADMIN)
+      parameters:
+        - $ref: '#/components/parameters/ProviderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProviderConfigRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderHealth'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/providers/{providerId}/fault-mode:
+    put:
+      tags: [Providers]
+      operationId: setProviderFaultMode
+      summary: Set the simulator fault mode (PLATFORM_ADMIN, profiles local/test only)
+      parameters:
+        - $ref: '#/components/parameters/ProviderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FaultModeRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FaultModeRequest'
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/ops/queues:
+    get:
+      tags: [Queues]
+      operationId: getQueues
+      summary: Queue depth per priority, in-flight, consumers, DLQ depth, retry-pending, oldest age
+      responses:
+        '200':
+          description: Queue statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueueStats'
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /api/v1/ops/summary:
+    get:
+      tags: [Queues]
+      operationId: getOpsSummary
+      summary: Dashboard aggregates for the last 24 hours
+      responses:
+        '200':
+          description: Aggregates
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpsSummary'
+  /api/v1/ops/consumers/pause:
+    post:
+      tags: [Queues]
+      operationId: pauseConsumers
+      summary: Pause dispatch consumers (PLATFORM_ADMIN)
+      responses:
+        '200':
+          description: Paused
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsumerState'
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /api/v1/ops/consumers/resume:
+    post:
+      tags: [Queues]
+      operationId: resumeConsumers
+      summary: Resume dispatch consumers (PLATFORM_ADMIN)
+      responses:
+        '200':
+          description: Resumed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsumerState'
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /api/v1/bulk-jobs:
+    post:
+      tags: [Bulk jobs]
+      operationId: createBulkJob
+      summary: Upload a recipient CSV and start a bulk send
+      description: Requires role SENDER and scope `messages:bulk`. CSV header `externalRef,locale,var_firstName,var_amount,...`.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, name, templateCode, channel, category]
+              properties:
+                file: {type: string, format: binary}
+                name: {type: string}
+                templateCode: {type: string}
+                channel: {$ref: '#/components/schemas/Channel'}
+                category: {$ref: '#/components/schemas/Category'}
+                ratePerSecond: {type: integer, minimum: 1}
+      responses:
+        '202':
+          description: Job created
+          headers:
+            Location: {schema: {type: string}, description: URL of the new bulk job}
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkJob'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+    get:
+      tags: [Bulk jobs]
+      operationId: listBulkJobs
+      summary: List bulk jobs
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - {name: sort, in: query, schema: {type: string, example: 'createdAt,desc'}, description: 'Optional sort, property[,asc|desc]; default createdAt,desc'}
+      responses:
+        '200':
+          description: A page of jobs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkJobPage'
+  /api/v1/bulk-jobs/generate-synthetic:
+    post:
+      tags: [Bulk jobs]
+      operationId: generateSyntheticBulkJob
+      summary: Create and submit a synthetic job without upload
+      description: Creates the needed SYN-nnnnnnn recipients first unless createRecipients=false (then every row fails with RECIPIENT_NOT_FOUND). Requires scope `messages:bulk`.
+      parameters:
+        - {name: createRecipients, in: query, required: false, schema: {type: boolean, default: true}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateSyntheticRequest'
+      responses:
+        '202':
+          description: Job created
+          headers:
+            Location: {schema: {type: string}, description: URL of the new bulk job}
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkJob'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /api/v1/bulk-jobs/{id}:
+    get:
+      tags: [Bulk jobs]
+      operationId: getBulkJob
+      summary: Bulk job with progress counters
+      parameters:
+        - $ref: '#/components/parameters/BulkJobId'
+      responses:
+        '200':
+          description: Job
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkJob'
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/bulk-jobs/{id}/failures:
+    get:
+      tags: [Bulk jobs]
+      operationId: listBulkJobFailures
+      summary: Rejected CSV rows
+      parameters:
+        - $ref: '#/components/parameters/BulkJobId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - {name: sort, in: query, schema: {type: string, example: 'lineNo,asc'}, description: 'Optional sort, property[,asc|desc]; default lineNo,asc'}
+      responses:
+        '200':
+          description: A page of failures
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkJobFailurePage'
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/bulk-jobs/{id}/stop:
+    post:
+      tags: [Bulk jobs]
+      operationId: stopBulkJob
+      summary: Stop a running job
+      parameters:
+        - $ref: '#/components/parameters/BulkJobId'
+      responses:
+        '200':
+          description: Stopping
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkJob'
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /api/v1/bulk-jobs/{id}/restart:
+    post:
+      tags: [Bulk jobs]
+      operationId: restartBulkJob
+      summary: Restart a stopped or failed job from the last committed chunk
+      parameters:
+        - $ref: '#/components/parameters/BulkJobId'
+      responses:
+        '200':
+          description: Restarted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkJob'
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /api/v1/diagnostics/messages/{id}:
+    get:
+      tags: [Diagnostics]
+      operationId: getMessageDiagnostics
+      summary: Provider diagnostics documents from MongoDB (OPERATOR, PLATFORM_ADMIN)
+      parameters:
+        - $ref: '#/components/parameters/MessageId'
+      responses:
+        '200':
+          description: Diagnostics documents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/callbacks/{providerId}:
+    post:
+      tags: [Callbacks]
+      operationId: receiveProviderCallback
+      summary: HMAC-authenticated provider webhook
+      description: |
+        No bearer token. Authenticated by `X-Signature: t=<epoch>,v1=<hex>` (HMAC-SHA256 over `t + "." + rawBody`),
+        `X-Provider-Key-Id` and `X-Event-Id`. 5 minute tolerance. The key id must belong to the provider
+        (`provider_config.hmac_key_ref`, or the `-next` key during rotation); an unknown provider is answered like a bad
+        signature (401) so providers cannot be enumerated.
+
+        Response policy: anything authentic gets a 2xx so the provider stops retrying. `202` with `result`
+        `accepted | duplicate | out_of_order | stale | conflict | unknown_message` (the event is recorded and never moves a
+        message backwards); `200` with `result=replayed` when the same `X-Event-Id` was already processed (no state
+        change); `401 INVALID_SIGNATURE`; `400 MALFORMED_REQUEST` for an authentic but unintelligible body or a missing
+        `X-Event-Id`. An event for a message the platform does not know yet is acknowledged (`unknown_message`) but not
+        remembered, so the provider's retry can still succeed once the message is committed.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProviderId'
+        - {name: X-Signature, in: header, required: true, schema: {type: string}, example: 't=1767225600,v1=ab12...'}
+        - {name: X-Provider-Key-Id, in: header, required: true, schema: {type: string}}
+        - {name: X-Event-Id, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Replay of an already processed X-Event-Id (result `replayed`), no state change
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CallbackAck'
+        '202':
+          description: Accepted (also for duplicates and out-of-order events, which are recorded but ignored)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CallbackAck'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+  /api/v1/me:
+    get:
+      tags: [Identity]
+      operationId: getMe
+      summary: Authenticated principal (roles, tenant) for the role-aware UI
+      responses:
+        '200':
+          description: Principal
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /dev/token:
+    post:
+      tags: [Development]
+      operationId: mintDevToken
+      summary: DEV ONLY. Mints an RS256 JWT for a demo persona (profiles local/test)
+      description: Does not exist unless `messaging.security.dev-token-enabled=true`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DevTokenRequest'
+            example:
+              subject: demo-sender
+              tenant: tenant-retail
+              roles: [SENDER]
+              scopes: ['messages:bulk']
+              ttlSeconds: 3600
+      responses:
+        '200':
+          description: Token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DevTokenResponse'
+        '400': {$ref: '#/components/responses/BadRequest'}
+  /dev/simulator/callbacks/emit:
+    post:
+      tags: [Development]
+      operationId: emitSimulatorCallback
+      summary: DEV ONLY. Makes the simulator post a signed callback to itself
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimulatorEmitRequest'
+      responses:
+        '202':
+          description: Scheduled; the body lists the callbacks that will be posted (`providerId`, `eventId`, `type`, `delayMs`)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  scheduled:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        providerId: {type: string}
+                        eventId: {type: string}
+                        type: {$ref: '#/components/schemas/DeliveryEventType'}
+                        delayMs: {type: integer, format: int64}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9._:~-]+$'}
+      description: Client-chosen unique key; same key and body replays the first response, same key with another body is 422.
+    TenantHeader:
+      name: X-Tenant-Id
+      in: header
+      required: false
+      schema: {type: string}
+      description: PLATFORM_ADMIN only. Scopes the request to one tenant (required for writes).
+    Page:
+      name: page
+      in: query
+      schema: {type: integer, minimum: 0, default: 0}
+    Size:
+      name: size
+      in: query
+      schema: {type: integer, minimum: 1, maximum: 200, default: 20}
+    MessageId:
+      name: id
+      in: path
+      required: true
+      schema: {type: string}
+    TemplateId:
+      name: id
+      in: path
+      required: true
+      schema: {type: string}
+    RecipientId:
+      name: id
+      in: path
+      required: true
+      schema: {type: string}
+    BulkJobId:
+      name: id
+      in: path
+      required: true
+      schema: {type: string}
+    ProviderId:
+      name: providerId
+      in: path
+      required: true
+      schema: {type: string, example: simulated-email}
+    VersionNo:
+      name: versionNo
+      in: path
+      required: true
+      schema: {type: integer, minimum: 1}
+    Locale:
+      name: locale
+      in: query
+      required: false
+      schema: {type: string, default: en, example: en}
+  responses:
+    BadRequest:
+      description: Malformed or invalid request (VALIDATION_FAILED, MALFORMED_REQUEST, UNSUPPORTED_CHANNEL)
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+          example:
+            timestamp: '2026-11-01T14:00:00Z'
+            status: 400
+            error: Bad Request
+            code: UNSUPPORTED_CHANNEL
+            message: Unsupported channel; supported channels are EMAIL, SMS, PUSH
+            path: /api/v1/messages
+            correlationId: 0b8f4a0e-6a77-4a5e-8d52-c3a1f7b2d9aa
+            details: [{field: channel, message: 'must be one of EMAIL, SMS, PUSH'}]
+    Unauthenticated:
+      description: Missing, invalid or expired token (UNAUTHENTICATED)
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+    Forbidden:
+      description: Authenticated but not permitted (FORBIDDEN)
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+    NotFound:
+      description: Not found, or owned by another tenant (NOT_FOUND)
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+    Conflict:
+      description: IDEMPOTENCY_IN_PROGRESS, ILLEGAL_STATE_TRANSITION, CONFLICT_OPTIMISTIC_LOCK, DUPLICATE_RESOURCE or REPLAYED_EVENT
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+          example:
+            timestamp: '2026-11-01T14:00:00Z'
+            status: 409
+            error: Conflict
+            code: ILLEGAL_STATE_TRANSITION
+            message: "Action 'cancel' is not permitted while message is DELIVERED"
+            path: /api/v1/messages/6f1c2f64/cancel
+            correlationId: 0b8f4a0e-6a77-4a5e-8d52-c3a1f7b2d9aa
+    PayloadTooLarge:
+      description: Body larger than 256 KB (PAYLOAD_TOO_LARGE)
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+    Unprocessable:
+      description: IDEMPOTENCY_KEY_REUSED, TEMPLATE_NOT_FOUND, TEMPLATE_VARIABLE_MISSING, TEMPLATE_RENDER_ERROR, RECIPIENT_NOT_FOUND
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+    RateLimited:
+      description: Per-client token bucket exhausted (RATE_LIMITED)
+      headers:
+        Retry-After: {schema: {type: integer}, description: Seconds until a token is available}
+        X-RateLimit-Limit: {schema: {type: integer}}
+        X-RateLimit-Remaining: {schema: {type: integer}}
+        X-RateLimit-Reset: {schema: {type: integer}}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+    Unavailable:
+      description: Backpressure or dependency outage (SERVICE_UNAVAILABLE); honour Retry-After
+      headers:
+        Retry-After: {schema: {type: integer}}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+  schemas:
+    ErrorCode:
+      type: string
+      enum: [VALIDATION_FAILED, MALFORMED_REQUEST, UNSUPPORTED_CHANNEL, UNAUTHENTICATED, FORBIDDEN, NOT_FOUND, IDEMPOTENCY_KEY_REUSED, IDEMPOTENCY_IN_PROGRESS, ILLEGAL_STATE_TRANSITION, TEMPLATE_NOT_FOUND, TEMPLATE_VARIABLE_MISSING, TEMPLATE_RENDER_ERROR, RECIPIENT_NOT_FOUND, POLICY_SUPPRESSED, RATE_LIMITED, PAYLOAD_TOO_LARGE, CONFLICT_OPTIMISTIC_LOCK, DUPLICATE_RESOURCE, INVALID_SIGNATURE, REPLAYED_EVENT, INTERNAL_ERROR, SERVICE_UNAVAILABLE]
+    ApiError:
+      type: object
+      required: [timestamp, status, error, code, message, path]
+      properties:
+        timestamp: {type: string, format: date-time}
+        status: {type: integer}
+        error: {type: string}
+        code: {$ref: '#/components/schemas/ErrorCode'}
+        message: {type: string}
+        path: {type: string}
+        correlationId: {type: string}
+        details:
+          type: array
+          items:
+            type: object
+            properties:
+              field: {type: string, nullable: true}
+              message: {type: string}
+    Channel:
+      type: string
+      enum: [EMAIL, SMS, PUSH]
+    Priority:
+      type: string
+      enum: [CRITICAL, HIGH, NORMAL, LOW]
+    Category:
+      type: string
+      enum: [TRANSACTIONAL, SECURITY_ALERT, SERVICE, MARKETING]
+    MessageStatus:
+      type: string
+      enum: [ACCEPTED, VALIDATED, QUEUED, PROCESSING, SENT_TO_PROVIDER, DELIVERED, REJECTED, RETRY_PENDING, FAILED, DEAD_LETTERED, CANCELLED, DELIVERY_UNKNOWN]
+    TemplateStatus:
+      type: string
+      enum: [DRAFT, PENDING_APPROVAL, PUBLISHED, RETIRED]
+    DeliveryEventType:
+      type: string
+      enum: [PROVIDER_ACCEPTED, SENT, DELIVERED, BOUNCED, FAILED, REJECTED, DEFERRED, OPENED, CLICKED, UNSUBSCRIBED]
+    ProviderOutcome:
+      type: string
+      enum: [ACCEPTED, TRANSIENT_FAILURE, PERMANENT_FAILURE, RATE_LIMITED, TIMEOUT, AMBIGUOUS]
+    DlqReason:
+      type: string
+      enum: [RETRIES_EXHAUSTED, POISON_MESSAGE, PERMANENT_FAILURE, OPERATOR]
+    Page:
+      type: object
+      properties:
+        page: {type: integer}
+        size: {type: integer}
+        totalElements: {type: integer, format: int64}
+        totalPages: {type: integer}
+        sort: {type: string, nullable: true}
+    SubmitMessageRequest:
+      type: object
+      required: [channel, category, template]
+      properties:
+        clientReference: {type: string, maxLength: 200}
+        recipientId: {type: string, description: Exactly one of recipientId or recipient.externalRef}
+        recipient:
+          type: object
+          properties:
+            externalRef: {type: string, maxLength: 100}
+        channel: {$ref: '#/components/schemas/Channel'}
+        category: {$ref: '#/components/schemas/Category'}
+        priority: {$ref: '#/components/schemas/Priority'}
+        template:
+          type: object
+          required: [code]
+          properties:
+            code: {type: string}
+            locale: {type: string, example: en-US}
+            version: {type: integer, nullable: true, description: null pins the latest PUBLISHED version at accept time}
+        variables:
+          type: object
+          maxProperties: 50
+          additionalProperties: {type: string, maxLength: 2000}
+        channelOptions:
+          type: object
+          properties:
+            email:
+              type: object
+              properties:
+                replyTo: {type: string}
+                headers: {type: object, additionalProperties: {type: string}, description: Names must match X-*}
+            sms:
+              type: object
+              properties:
+                senderId: {type: string, maxLength: 20}
+            push:
+              type: object
+              properties:
+                collapseKey: {type: string}
+                ttlSeconds: {type: integer, minimum: 1, maximum: 2419200}
+        fallbackChannels:
+          type: array
+          maxItems: 2
+          items: {$ref: '#/components/schemas/Channel'}
+          description: Evaluated independently through the full policy; a fallback never bypasses consent
+        schedule:
+          type: object
+          properties:
+            sendAt: {type: string, format: date-time}
+            expiresAt: {type: string, format: date-time}
+        metadata:
+          type: object
+          maxProperties: 20
+          additionalProperties: {type: string}
+    MessageAcceptedResponse:
+      type: object
+      properties:
+        id: {type: string}
+        status: {$ref: '#/components/schemas/MessageStatus'}
+        channel: {$ref: '#/components/schemas/Channel'}
+        correlationId: {type: string}
+        scheduledAt: {type: string, format: date-time, nullable: true}
+        statusReason: {type: string, nullable: true}
+        links: {type: object, additionalProperties: {type: string}}
+    MessageSummary:
+      type: object
+      properties:
+        id: {type: string}
+        clientReference: {type: string, nullable: true}
+        recipientId: {type: string}
+        channel: {$ref: '#/components/schemas/Channel'}
+        category: {$ref: '#/components/schemas/Category'}
+        priority: {$ref: '#/components/schemas/Priority'}
+        status: {$ref: '#/components/schemas/MessageStatus'}
+        statusReason: {type: string, nullable: true}
+        correlationId: {type: string}
+        attemptCount: {type: integer}
+        scheduledAt: {type: string, format: date-time, nullable: true}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        channelUsed: {allOf: [{$ref: '#/components/schemas/Channel'}], nullable: true}
+        templateCode: {type: string}
+        nextAttemptAt: {type: string, format: date-time, nullable: true}
+    MessagePage:
+      allOf:
+        - $ref: '#/components/schemas/Page'
+        - type: object
+          properties:
+            content:
+              type: array
+              items: {$ref: '#/components/schemas/MessageSummary'}
+    MessageDetail:
+      type: object
+      properties:
+        id: {type: string}
+        tenantId: {type: string}
+        clientReference: {type: string, nullable: true}
+        recipient:
+          type: object
+          properties:
+            id: {type: string}
+            externalRef: {type: string}
+            maskedAddress: {type: string, example: 'r***@example.test'}
+        channel: {$ref: '#/components/schemas/Channel'}
+        channelUsed: {allOf: [{$ref: '#/components/schemas/Channel'}], nullable: true}
+        category: {$ref: '#/components/schemas/Category'}
+        priority: {$ref: '#/components/schemas/Priority'}
+        status: {$ref: '#/components/schemas/MessageStatus'}
+        statusReason: {type: string, nullable: true}
+        terminal: {type: boolean}
+        template:
+          type: object
+          properties:
+            code: {type: string}
+            versionNo: {type: integer}
+            locale: {type: string}
+        correlationId: {type: string}
+        idempotencyKey: {type: string, nullable: true}
+        scheduledAt: {type: string, format: date-time, nullable: true}
+        expiresAt: {type: string, format: date-time, nullable: true}
+        attemptCount: {type: integer}
+        maxAttempts: {type: integer}
+        nextAttemptAt: {type: string, format: date-time, nullable: true}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        attempts:
+          type: array
+          items: {$ref: '#/components/schemas/Attempt'}
+        deliveryEvents:
+          type: array
+          items: {$ref: '#/components/schemas/DeliveryEvent'}
+    Attempt:
+      type: object
+      properties:
+        attemptNo: {type: integer}
+        channel: {$ref: '#/components/schemas/Channel'}
+        providerId: {type: string}
+        outcome: {allOf: [{$ref: '#/components/schemas/ProviderOutcome'}], nullable: true}
+        providerMessageId: {type: string, nullable: true}
+        errorCode: {type: string, nullable: true}
+        latencyMs: {type: integer, format: int64, nullable: true}
+        startedAt: {type: string, format: date-time}
+    DeliveryEvent:
+      type: object
+      properties:
+        id: {type: string}
+        messageId: {type: string}
+        providerId: {type: string}
+        providerEventId: {type: string}
+        type: {$ref: '#/components/schemas/DeliveryEventType'}
+        occurredAt: {type: string, format: date-time}
+        receivedAt: {type: string, format: date-time}
+        applied: {type: boolean}
+        ignoredReason: {type: string, nullable: true, description: 'OUT_OF_ORDER, STALE or DUPLICATE'}
+    DeliveryEventPage:
+      allOf:
+        - $ref: '#/components/schemas/Page'
+        - type: object
+          properties:
+            content:
+              type: array
+              items: {$ref: '#/components/schemas/DeliveryEvent'}
+    MessageStatusResponse:
+      type: object
+      properties:
+        id: {type: string}
+        status: {$ref: '#/components/schemas/MessageStatus'}
+        statusReason: {type: string, nullable: true}
+        channelUsed: {allOf: [{$ref: '#/components/schemas/Channel'}], nullable: true}
+        attemptCount: {type: integer}
+        updatedAt: {type: string, format: date-time}
+        terminal: {type: boolean}
+    TimelineEntry:
+      type: object
+      properties:
+        at: {type: string, format: date-time}
+        kind: {type: string, enum: [AUDIT, ATTEMPT, DELIVERY_EVENT]}
+        type: {type: string}
+        summary: {type: string}
+        detail: {type: object, additionalProperties: true}
+    DeadLetterItem:
+      type: object
+      properties:
+        messageId: {type: string}
+        tenantId: {type: string}
+        channel: {$ref: '#/components/schemas/Channel'}
+        category: {$ref: '#/components/schemas/Category'}
+        priority: {$ref: '#/components/schemas/Priority'}
+        reason: {allOf: [{$ref: '#/components/schemas/DlqReason'}], nullable: true}
+        statusReason: {type: string, nullable: true}
+        attemptCount: {type: integer}
+        discarded: {type: boolean}
+        deadLetteredAt: {type: string, format: date-time}
+    DeadLetterPage:
+      allOf:
+        - $ref: '#/components/schemas/Page'
+        - type: object
+          properties:
+            content:
+              type: array
+              items: {$ref: '#/components/schemas/DeadLetterItem'}
+    DiscardRequest:
+      type: object
+      properties:
+        reason: {type: string, maxLength: 500}
+    AuditEvent:
+      type: object
+      properties:
+        id: {type: string}
+        tenantId: {type: string, nullable: true}
+        actor: {type: string}
+        actorRole: {type: string, nullable: true}
+        action: {type: string, example: MESSAGE_ACCEPTED}
+        entityType: {type: string, example: MESSAGE}
+        entityId: {type: string}
+        correlationId: {type: string, nullable: true}
+        detail: {type: object, additionalProperties: true}
+        occurredAt: {type: string, format: date-time}
+    AuditEventPage:
+      allOf:
+        - $ref: '#/components/schemas/Page'
+        - type: object
+          properties:
+            content:
+              type: array
+              items: {$ref: '#/components/schemas/AuditEvent'}
+    CreateTemplateRequest:
+      type: object
+      required: [code, name, channel, category, locale, body]
+      properties:
+        code: {type: string, pattern: '^[A-Za-z0-9_.-]{1,100}$'}
+        name: {type: string, maxLength: 200}
+        channel: {$ref: '#/components/schemas/Channel'}
+        category: {$ref: '#/components/schemas/Category'}
+        locale: {type: string, example: en}
+        subject: {type: string, maxLength: 500, description: Required for EMAIL and PUSH (title), must be empty for SMS}
+        body: {type: string, maxLength: 10000, description: 'Allow-listed placeholders only: {{name}} or {{name|default}}. No expressions.'}
+        variables: {type: array, maxItems: 50, items: {type: string, pattern: '^[A-Za-z][A-Za-z0-9_]{0,63}$'}}
+    CreateVersionRequest:
+      type: object
+      required: [locale, body]
+      properties:
+        versionNo: {type: integer, nullable: true, description: Omit for max+1; an existing number adds a locale variant}
+        locale: {type: string}
+        subject: {type: string}
+        body: {type: string}
+        variables: {type: array, items: {type: string}}
+    UpdateVersionRequest:
+      type: object
+      required: [body, version]
+      properties:
+        subject: {type: string}
+        body: {type: string}
+        variables: {type: array, items: {type: string}}
+        version: {type: integer, format: int64, description: Optimistic-lock token}
+    RejectRequest:
+      type: object
+      required: [comment]
+      properties:
+        comment: {type: string, maxLength: 1000}
+    PreviewRequest:
+      type: object
+      required: [channel, body]
+      properties:
+        channel: {$ref: '#/components/schemas/Channel'}
+        subject: {type: string}
+        body: {type: string}
+        variables: {type: array, items: {type: string}, description: Declared names; defaults to the placeholders found}
+        sampleData: {type: object, additionalProperties: {type: string}}
+        locale: {type: string}
+    PreviewResponse:
+      type: object
+      properties:
+        valid: {type: boolean}
+        subject: {type: string, nullable: true}
+        body: {type: string, nullable: true}
+        html: {type: boolean}
+        sms:
+          type: object
+          nullable: true
+          properties:
+            encoding: {type: string, enum: [GSM-7, UCS-2]}
+            characters: {type: integer}
+            segments: {type: integer}
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field: {type: string, nullable: true}
+              message: {type: string}
+    TemplateVersion:
+      type: object
+      properties:
+        id: {type: string}
+        versionNo: {type: integer}
+        locale: {type: string}
+        status: {$ref: '#/components/schemas/TemplateStatus'}
+        subject: {type: string, nullable: true}
+        body: {type: string}
+        variables: {type: array, items: {type: string}}
+        createdBy: {type: string}
+        approvedBy: {type: string, nullable: true}
+        publishedAt: {type: string, format: date-time, nullable: true}
+        rejectionComment: {type: string, nullable: true}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        version: {type: integer, format: int64}
+    TemplateSummary:
+      type: object
+      properties:
+        id: {type: string}
+        tenantId: {type: string}
+        code: {type: string}
+        name: {type: string}
+        channel: {$ref: '#/components/schemas/Channel'}
+        category: {$ref: '#/components/schemas/Category'}
+        latestVersionNo: {type: integer}
+        publishedLocales: {type: array, items: {type: string}}
+        versionCounts: {type: object, additionalProperties: {type: integer, format: int64}}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    TemplatePage:
+      allOf:
+        - $ref: '#/components/schemas/Page'
+        - type: object
+          properties:
+            content:
+              type: array
+              items: {$ref: '#/components/schemas/TemplateSummary'}
+    TemplateDetail:
+      type: object
+      properties:
+        id: {type: string}
+        tenantId: {type: string}
+        code: {type: string}
+        name: {type: string}
+        channel: {$ref: '#/components/schemas/Channel'}
+        category: {$ref: '#/components/schemas/Category'}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        versions:
+          type: array
+          items: {$ref: '#/components/schemas/TemplateVersion'}
+    RecipientSummary:
+      type: object
+      properties:
+        id: {type: string}
+        tenantId: {type: string}
+        externalRef: {type: string}
+        displayName: {type: string, nullable: true}
+        maskedEmail: {type: string, nullable: true}
+        maskedPhone: {type: string, nullable: true}
+        locale: {type: string}
+        timeZone: {type: string}
+        deleted: {type: boolean}
+    RecipientPage:
+      allOf:
+        - $ref: '#/components/schemas/Page'
+        - type: object
+          properties:
+            content:
+              type: array
+              items: {$ref: '#/components/schemas/RecipientSummary'}
+    PreferencesResponse:
+      type: object
+      properties:
+        recipientId: {type: string}
+        marketingOptIn: {type: boolean}
+        emailEnabled: {type: boolean}
+        smsEnabled: {type: boolean}
+        pushEnabled: {type: boolean}
+        quietStart: {type: string, example: '21:00'}
+        quietEnd: {type: string, example: '08:00'}
+        timeZone: {type: string}
+        fallbackOrder: {type: array, items: {$ref: '#/components/schemas/Channel'}}
+        suppressedChannels: {type: array, items: {$ref: '#/components/schemas/Channel'}}
+        version: {type: integer, format: int64, nullable: true, description: Null only when no preference row exists yet}
+        updatedAt: {type: string, format: date-time, nullable: true}
+    UpdatePreferencesRequest:
+      type: object
+      required: [marketingOptIn, emailEnabled, smsEnabled, pushEnabled]
+      properties:
+        marketingOptIn: {type: boolean}
+        emailEnabled: {type: boolean}
+        smsEnabled: {type: boolean}
+        pushEnabled: {type: boolean}
+        quietStart: {type: string, example: '22:00', description: HH:mm, must be sent together with quietEnd}
+        quietEnd: {type: string, example: '07:00'}
+        timeZone: {type: string, example: America/New_York}
+        fallbackOrder: {type: array, maxItems: 3, items: {$ref: '#/components/schemas/Channel'}}
+        version: {type: integer, format: int64, nullable: true}
+    SuppressionRequest:
+      type: object
+      required: [channel]
+      properties:
+        channel: {$ref: '#/components/schemas/Channel'}
+        reason: {type: string, maxLength: 100, example: COMPLAINT}
+    SuppressionResponse:
+      type: object
+      properties:
+        recipientId: {type: string}
+        channel: {$ref: '#/components/schemas/Channel'}
+        reason: {type: string}
+        createdAt: {type: string, format: date-time}
+    MeResponse:
+      type: object
+      properties:
+        subject: {type: string}
+        tenant: {type: string}
+        effectiveTenant: {type: string, nullable: true}
+        roles: {type: array, items: {type: string}}
+        scopes: {type: array, items: {type: string}}
+        platformAdmin: {type: boolean}
+    ProviderHealth:
+      type: object
+      properties:
+        providerId: {type: string}
+        channel: {$ref: '#/components/schemas/Channel'}
+        enabled: {type: boolean}
+        circuitState: {type: string, enum: [CLOSED, HALF_OPEN, OPEN]}
+        successRate: {type: number}
+        p95LatencyMs: {type: integer, format: int64}
+        ratePerSec: {type: integer}
+        rateLimitPerSec: {type: integer, description: Same value as ratePerSec; kept additively for the Angular console}
+        timeoutMs: {type: integer}
+        lastError: {type: string, nullable: true}
+        faultMode: {type: string, nullable: true}
+        faultProbability: {type: number, nullable: true}
+        simulated: {type: boolean}
+    ProviderConfigRequest:
+      type: object
+      properties:
+        enabled: {type: boolean}
+        ratePerSec: {type: integer, minimum: 1, maximum: 100000, description: '`rateLimitPerSec` is accepted as an alias'}
+        timeoutMs: {type: integer, minimum: 100, maximum: 60000}
+    FaultModeRequest:
+      type: object
+      required: [mode]
+      properties:
+        mode: {type: string, enum: [NONE, TRANSIENT, PERMANENT, RATE_LIMIT, TIMEOUT, AMBIGUOUS, ALTERNATING]}
+        probability: {type: number, minimum: 0, maximum: 1}
+    QueueStats:
+      type: object
+      properties:
+        depthByPriority: {type: object, additionalProperties: {type: integer, format: int64}}
+        inFlight: {type: integer, format: int64}
+        consumers: {type: integer}
+        dlqDepth: {type: integer, format: int64}
+        retryPending: {type: integer, format: int64}
+        delayed: {type: integer, format: int64}
+        oldestMessageAgeMs: {type: integer, format: int64, nullable: true}
+        oldestMessageAgeSeconds: {type: integer, format: int64, nullable: true, description: Same age in seconds; additive alias for the Angular console}
+        paused: {type: boolean}
+        consumersPaused: {type: boolean, description: Same value as paused; additive alias for the Angular console}
+    OpsSummary:
+      type: object
+      properties:
+        byStatus: {type: object, additionalProperties: {type: integer, format: int64}}
+        byChannel: {type: object, additionalProperties: {type: integer, format: int64}}
+        total: {type: integer, format: int64, description: Messages created in the window}
+        successRate: {type: number, description: '(DELIVERED + SENT_TO_PROVIDER) / (those + FAILED + DEAD_LETTERED + DELIVERY_UNKNOWN); 1.0 when nothing finished yet'}
+        p95DispatchDelayMs: {type: integer, format: int64}
+        windowHours: {type: integer, example: 24}
+    ConsumerState:
+      type: object
+      properties:
+        paused: {type: boolean}
+    BulkJob:
+      type: object
+      properties:
+        id: {type: string}
+        tenantId: {type: string}
+        name: {type: string}
+        status: {type: string, enum: [CREATED, RUNNING, COMPLETED, COMPLETED_WITH_ERRORS, FAILED, STOPPED, ABANDONED]}
+        total: {type: integer, format: int64}
+        processed: {type: integer, format: int64}
+        succeeded: {type: integer, format: int64}
+        failed: {type: integer, format: int64}
+        duplicate: {type: integer, format: int64}
+        fileName: {type: string, nullable: true}
+        ratePerSecond: {type: integer, nullable: true}
+        createdBy: {type: string}
+        startedAt: {type: string, format: date-time, nullable: true}
+        finishedAt: {type: string, format: date-time, nullable: true}
+    BulkJobPage:
+      allOf:
+        - $ref: '#/components/schemas/Page'
+        - type: object
+          properties:
+            content:
+              type: array
+              items: {$ref: '#/components/schemas/BulkJob'}
+    BulkJobFailure:
+      type: object
+      properties:
+        lineNo: {type: integer, format: int64, description: 'CSV line number; 0 means a job-level failure (for example SKIP_LIMIT_EXCEEDED or STEP_FAILED)'}
+        reason: {type: string}
+        rawLineHash: {type: string}
+    BulkJobFailurePage:
+      allOf:
+        - $ref: '#/components/schemas/Page'
+        - type: object
+          properties:
+            content:
+              type: array
+              items: {$ref: '#/components/schemas/BulkJobFailure'}
+    GenerateSyntheticRequest:
+      type: object
+      required: [rows]
+      properties:
+        rows: {type: integer, minimum: 1}
+        duplicateRate: {type: number, minimum: 0, maximum: 1}
+        invalidRate: {type: number, minimum: 0, maximum: 1}
+        templateCode: {type: string}
+        channel: {$ref: '#/components/schemas/Channel'}
+        category: {$ref: '#/components/schemas/Category'}
+    CallbackAck:
+      type: object
+      properties:
+        result: {type: string, enum: [accepted, duplicate, out_of_order, stale, conflict, replayed, unknown_message]}
+        eventId: {type: string}
+    SimulatorEmitRequest:
+      type: object
+      required: [messageId, type]
+      properties:
+        messageId: {type: string}
+        type: {$ref: '#/components/schemas/DeliveryEventType'}
+        delayMs: {type: integer, minimum: 0}
+        duplicate: {type: boolean}
+        outOfOrder: {type: boolean}
+    DevTokenRequest:
+      type: object
+      required: [subject, tenant]
+      properties:
+        subject: {type: string}
+        tenant: {type: string, description: Tenant id; `*` only together with PLATFORM_ADMIN}
+        roles:
+          type: array
+          items: {type: string, enum: [PLATFORM_ADMIN, TENANT_ADMIN, TEMPLATE_AUTHOR, TEMPLATE_APPROVER, OPERATOR, SENDER, AUDITOR]}
+        scopes: {type: array, items: {type: string}}
+        ttlSeconds: {type: integer, maximum: 28800}
+    DevTokenResponse:
+      type: object
+      properties:
+        accessToken: {type: string}
+        tokenType: {type: string, example: Bearer}
+        expiresIn: {type: integer, format: int64}
+        claims: {type: object, additionalProperties: true}

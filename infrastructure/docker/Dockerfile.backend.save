@@ -1,0 +1,53 @@
+i# syntax=docker/dockerfile:1.7
+# NOT executed on the authoring machine (no Docker). Statically reviewed only.
+# IiIBuild context: repository root.  docker build -f infrastructure/docker/Dockerfile.backend -t messaging-backend:local .
+
+ARG MAVEN_IMAGE=maven:3.9.9-eclipse-temurin-21
+ARG JRE_IMAGE=eclipse-temurin:21.0.5_11-jre-jammy
+
+# ---------- build stage ----------
+FROM ${MAVEN_IMAGE} AS build
+WORKDIR /build
+COPY backend/pom.xml ./pom.xml
+RUN --mount=type=cache,target=/root/.m2 mvn -B -q -DskipTests dependency:go-offline || true
+COPY backend/src ./src
+RUN --mount=type=cache,target=/root/.m2 mvn -B -DskipTests package \
+    && cp target/*.jar /build/app.jar \
+    && java -Djarmode=tools -jar /build/app.jar extract --layers --destination /build/layers
+
+# ---------- runtime stage ----------
+FROM ${JRE_IMAGE} AS runtime
+ARG VERSION=0.0.0-local
+ARG GIT_SHA=unknown
+LABEL org.opencontainers.image.title="messaging-platform-backend" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${GIT_SHA}" \
+      org.opencontainers.image.description="Synthetic-data messaging orchestration backend (demo)"
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl tini \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system --gid 10001 app \
+    && useradd --system --uid 10001 --gid app --home-dir /app --shell /usr/sbin/nologin app \
+    && mkdir -p /app /tmp/uploads && chown -R app:app /app /tmp/uploads
+
+WORKDIR /app
+COPY --from=build --chown=app:app /build/layers/dependencies/ ./
+COPY --from=build --chown=app:app /build/layers/spring-boot-loader/ ./
+COPY --from=build --chown=app:app /build/layers/snapshot-dependenciq
+
+
+
+USER 10001:10001
+EXPOSE 18080
+
+# Container-aware JVM flags. Override with JAVA_TOOL_OPTIONS / JAVA_OPTS at runtime.
+ENV SERVER_PORT=18080 \
+    SPRING_PROFILES_ACTIVE=prod-like,rabbit \
+    JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=70 -XX:InitialRAMPercentage=50 -XX:+ExitOnOutOfMemoryError -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Djava.security.egd=file:/dev/./urandom -Dfile.encoding=UTF-8 -Duser.timezone=UTC"
+
+HEALTHCHECK --interval=15s --timeout=3s --start-period=60s --retries=5 \
+  CMD curl -fsS http://127.0.0.1:${SERVER_PORT}/actuator/health/liveness || exit 1
+
+# Spring Boot graceful shutdown (server.shutdown=graceful) needs SIGTERM delivered to the JVM: tini forwards it.
+ENTRYPOINT ["/usr/bin/tini", "--", "sh", "-c", "exec java $JAVA_OPTS -jar /app/app.jar"]

@@ -1,0 +1,52 @@
+<?xml version="1.0"?>
+<!DOCTYPE module PUBLIC "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN" "https://checkstyle.org/dtds/configuration_1_3.dtd">
+<!--
+  Checkstyle rules for the messaging platform. Deliberately correctness/hygiene oriented: no whitespace, brace or
+  naming-style rules (the code base has no mandated formatter), so a failure here is always a real defect or
+  dead code, never a matter of taste. Every violation is severity "warning" and the maven profile fails on warnings.
+-->
+<module name="Checker">
+  <property name="severity" value="warning"/>
+  <property name="charset" value="UTF-8"/>
+
+  <module name="NewlineAtEndOfFile">
+    <property name="lineSeparator" value="lf_cr_crlf"/>
+  </module>
+  <module name="FileTabCharacter"/>
+
+  <module name="TreeWalker">
+    <!-- imports -->
+    <module name="AvoidStarImport">
+      <!-- the state-transition table statically imports the MessageStatus constants for readability -->
+      <property name="allowStaticMemberImports" value="true"/>
+    </module>
+    <module name="RedundantImport"/>
+    <module name="UnusedImports"/>
+    <module name="IllegalImport"/>
+
+    <!-- bug patterns -->
+    <module name="EqualsHashCode"/>
+    <module name="CovariantEquals"/>
+    <module name="StringLiteralEquality"/>
+    <module name="EmptyStatement"/>
+    <module name="FallThrough"/>
+    <module name="MissingSwitchDefault"/>
+    <module name="DefaultComesLast"/>
+    <module name="NoFinalizer"/>
+    <module name="SimplifyBooleanExpression"/>
+    <module name="SimplifyBooleanReturn"/>
+    <module name="OneStatementPerLine"/>
+    <module name="MultipleVariableDeclarations"/>
+    <module name="ArrayTypeStyle"/>
+    <module name="UpperEll"/>
+    <module name="ModifierOrder"/>
+    <module name="RedundantModifier"/>
+    <module name="MissingOverride"/>
+    <module name="PackageDeclaration"/>
+    <module name="OuterTypeFilename"/>
+    <module name="ExplicitInitialization"/>
+    <module name="IllegalInstantiation">
+      <property name="classes" value="java.lang.Boolean, java.lang.Integer, java.lang.Long"/>
+    </module>
+  </module>
+</module>

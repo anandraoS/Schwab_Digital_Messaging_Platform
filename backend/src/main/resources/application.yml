@@ -1,0 +1,157 @@
+# Base configuration shared by every profile. No secrets live in this file or any profile file: anything sensitive
+# is an environment variable placeholder (see application-prod-like.yml). Activate a profile explicitly:
+#   --spring.profiles.active=local | test | prod-like
+spring:
+  application:
+    name: messaging-platform
+  profiles:
+    group:
+      # the production-like deployment talks to RabbitMQ, so it also enables the rabbit bus and topology
+      prod-like: rabbit
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+          batch_size: 50
+        order_inserts: true
+        order_updates: true
+        type:
+          preferred_instant_jdbc_type: TIMESTAMP
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  batch:
+    jdbc:
+      initialize-schema: never
+    job:
+      enabled: false
+  data:
+    mongodb:
+      database: messaging_diagnostics
+    redis:
+      repositories:
+        enabled: false
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 21MB
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+server:
+  shutdown: graceful
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never
+  forward-headers-strategy: none
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        messaging.dispatch.delay: true
+        messaging.provider.latency: true
+  tracing:
+    enabled: false
+    sampling:
+      probability: 0.0
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+  show-actuator: false
+
+logging:
+  level:
+    root: INFO
+    com.example.messaging: INFO
+    org.hibernate.orm.deprecation: ERROR
+    org.hibernate.orm.incubating: ERROR
+
+messaging:
+  dispatch:
+    concurrency: 8
+    prefetch: 16
+    max-attempts: 5
+    backoff-base-ms: 1000
+    backoff-cap-ms: 60000
+    poison-threshold: 5
+    receipt-timeout: 15m
+    reconcile-after: 5m
+    lock-ttl: 2m
+  backpressure:
+    max-queue-depth: 5000
+  bus:
+    type: memory
+  coordination:
+    type: memory
+  pipeline:
+    auto-start: true               # subscribe the dispatch consumer and start bus workers on startup
+    shutdown-timeout: 30s          # graceful drain of in-flight deliveries
+    rate-limit-requeue-delay: 250ms
+    validated-requeue-delay: 150ms
+    replay-window: 24h             # callback replay guard memory
+    queued-stale-after: 10m        # poller re-publishes QUEUED messages older than this with no processed dispatch
+    scheduler:
+      enabled: true
+      outbox-interval-ms: 200
+      outbox-batch: 100
+      poller-interval-ms: 1000
+      retry-grace: 5s
+      orphan-age: 1m
+      sweeper-interval-ms: 10000
+      sweep-batch: 100
+      reconcile-interval-ms: 15000
+      reconcile-batch: 50
+      reconcile-max-checks: 5
+    resilience:
+      failure-rate-threshold: 50
+      sliding-window-size: 20
+      minimum-calls: 10
+      open-state-wait: 5s
+      half-open-calls: 3
+      executor-threads: 16
+      executor-queue: 64
+  simulator:
+    auto-callbacks: false          # simulators post SENT/DELIVERED webhooks to the platform when true
+    callback-delay: 50ms
+  api:
+    rate-per-sec: 50
+    burst: 100
+    max-body-bytes: 262144
+  bulk:
+    concurrency: 4
+    chunk-size: 500
+    skip-limit: 100
+    max-rows: 100000
+    upload-dir: target/bulk-uploads
+  retention:
+    message-days: 90
+    audit-days: 365
+    event-days: 30
+  security:
+    dev-token-enabled: false
+    docs-public: false
+    metrics-public: false
